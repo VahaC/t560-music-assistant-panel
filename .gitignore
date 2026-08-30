@@ -2,4 +2,4 @@ build/
 *.o
 *.apk
 *.tar.gz
-
+AGENTS.md
