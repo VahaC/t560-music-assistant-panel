@@ -48,6 +48,9 @@ playlist sensors and the room proxy entities consumed by this application.
 
 ## Building on the SM-T560
 
+For complete Windows, on-device, APK, autostart, update, and rollback
+instructions, see [BUILD_AND_INSTALL.md](docs/BUILD_AND_INSTALL.md).
+
 The repository root already contains a verified `t560-panel` binary. It is a
 44 KB ELF 32-bit ARM EABI5/musl executable built in a clean Alpine 3.20 ARMv7
 container. The source also compiles successfully on x86_64 Alpine as an API
@@ -102,4 +105,3 @@ The future motion-detection architecture is documented in
 at 320x240 and 2-5 FPS with a lightweight frame-difference daemon. Object
 recognition should run on a more powerful LAN server after the tablet detects
 motion.
-
