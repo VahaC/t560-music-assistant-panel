@@ -1,0 +1,28 @@
+# Copy to ~/.config/t560-music-panel/config.ini and replace every entity ID
+# with the actual IDs created by Home Assistant and the Media Controller
+# integration. There are no text-entry controls in the tablet application.
+
+[home_assistant]
+url=http://192.168.1.100:8123
+
+[entities]
+player=media_player.your_music_assistant_player
+queue=sensor.your_controller_queue
+playlists=sensor.your_controller_playlists
+
+# These room controls are optional. Remove a key to disable its tile.
+light_1=light.your_controller_light_1
+light_2=light.your_controller_light_2
+fan=switch.your_controller_fan
+ac=switch.your_controller_ac
+
+[labels]
+light_1=LIGHT 1
+light_2=LIGHT 2
+fan=FAN
+ac=AC
+
+[panel]
+# 1000 ms is responsive while keeping CPU/network use low.
+poll_interval_ms=1000
+

@@ -1,0 +1,9 @@
+<!-- Merge this application block inside <applications> in rc.xml. -->
+<application name="t560-music-panel" class="T560MusicPanel">
+  <decor>no</decor>
+  <focus>yes</focus>
+  <desktop>all</desktop>
+  <layer>normal</layer>
+  <fullscreen>no</fullscreen>
+  <maximized>yes</maximized>
+</application>

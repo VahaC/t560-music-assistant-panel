@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Music Panel
+Exec=/usr/bin/t560-open-panel
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;
+

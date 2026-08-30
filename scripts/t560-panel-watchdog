@@ -1,0 +1,14 @@
+#!/bin/sh
+
+export DISPLAY="${DISPLAY:-:0}"
+export LANG="${LANG:-en_US.UTF-8}"
+export GTK_THEME="Adwaita:dark"
+
+mkdir -p "$HOME/.local/state"
+: >"$HOME/.local/state/t560-music-panel.log"
+
+while true; do
+    /usr/bin/t560-panel >>"$HOME/.local/state/t560-music-panel.log" 2>&1
+    sleep 2
+done
+
