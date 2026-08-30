@@ -21,5 +21,6 @@ install: t560-panel
 	install -Dm755 t560-panel "$(DESTDIR)$(PREFIX)/bin/t560-panel"
 	install -Dm755 scripts/t560-panel-watchdog "$(DESTDIR)$(PREFIX)/bin/t560-panel-watchdog"
 	install -Dm755 scripts/t560-open-panel "$(DESTDIR)$(PREFIX)/bin/t560-open-panel"
+	install -Dm755 scripts/t560-restart-panel "$(DESTDIR)$(PREFIX)/bin/t560-restart-panel"
 	install -Dm644 config/config.ini.example "$(DESTDIR)/etc/t560-music-panel/config.ini.example"
 	install -Dm644 data/t560-music-panel.desktop "$(DESTDIR)$(PREFIX)/share/applications/t560-music-panel.desktop"

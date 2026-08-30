@@ -30,43 +30,33 @@ or an on-screen keyboard. All settings are edited over SSH.
 ~/.config/t560-music-panel/token
 ```
 
-Copy [config.ini.example](config/config.ini.example) to `config.ini` and replace
-every placeholder with the entity IDs created by Home Assistant and the Media
-Controller integration. Put the long-lived access token in the separate
-`token` file. Never commit the token.
-
-```sh
-mkdir -p ~/.config/t560-music-panel
-cp /etc/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini
-chmod 700 ~/.config/t560-music-panel
-chmod 600 ~/.config/t560-music-panel/config.ini ~/.config/t560-music-panel/token
-```
+The first-installation procedure transfers [config.ini.example](config/config.ini.example)
+into the user-owned configuration directory. Replace every placeholder with
+the entity IDs created by Home Assistant and the Media Controller integration.
+Put the long-lived access token in the separate `token` file. Never commit the
+token.
 
 The Media Controller integration from the ESP32 controller repository must be
 installed and configured in Home Assistant first. It creates the queue and
 playlist sensors and the room proxy entities consumed by this application.
 
-## Building on the SM-T560
+## Build and installation
 
-For complete Windows, on-device, APK, autostart, update, and rollback
-instructions, see [BUILD_AND_INSTALL.md](docs/BUILD_AND_INSTALL.md).
+The complete guide contains two end-to-end procedures:
+
+- first installation on an unmodified tablet user account;
+- updating an existing installation without replacing configuration or tokens.
+
+See [BUILD_AND_INSTALL.md](docs/BUILD_AND_INSTALL.md).
 
 The repository root already contains a verified `t560-panel` binary. It is a
 44 KB ELF 32-bit ARM EABI5/musl executable built in a clean Alpine 3.20 ARMv7
 container. The source also compiles successfully on x86_64 Alpine as an API
 compatibility check. Checksums are stored in `SHA256SUMS`.
 
-If the postmarketOS edge libraries are ABI-incompatible with the provided
-binary, rebuild the same source directly on the tablet:
-
-```sh
-apk add build-base gtk+3.0-dev libsoup3-dev json-glib-dev
-make -j1
-doas make install
-```
-
-Use `-j1` on this memory-constrained tablet. Runtime dependencies are
-`gtk+3.0`, `libsoup3`, `json-glib`, and `xdotool`.
+The recommended deployment is rootless. The executable and launch scripts are
+installed below `/home/vahac/.local`, and files are transferred through the
+existing SSH connection without requiring SCP, SFTP, or administrative access.
 
 ## Openbox autostart
 
@@ -75,28 +65,15 @@ preserves Tint2, the cursor helper, and the existing Power button handler. It
 does not start Badwolf, WebKit, or Matchbox Keyboard. Back up the current
 autostart file before replacing it.
 
-The minimal manual change to the current autostart file is:
-
-```sh
-# Remove or comment out:
-# "$HOME/.local/bin/t560-badwolf-watchdog" &
-
-# Add:
-/usr/bin/t560-panel-watchdog &
-```
-
-Merge the block from [application.xml](openbox/application.xml) inside the
-`<applications>` element in `~/.config/openbox/rc.xml`, then run:
-
-```sh
-openbox --reconfigure
-```
+The first-installation procedure transfers the provided file as a candidate,
+backs up the current Openbox autostart, tests the panel, and activates the new
+autostart only after the test succeeds. It does not replace `rc.xml`.
 
 ## Alpine APK
 
-The [APKBUILD](packaging/APKBUILD) limits the package to `armv7`. For a local
-APK build, create a source archive containing a directory named
-`t560-music-panel-0.1.0`, run `abuild checksum`, and then run `abuild -r`.
+The [APKBUILD](packaging/APKBUILD) limits the package to `armv7`. APK packaging
+is optional and is not the recommended installation method on the current
+tablet because it requires intentionally configured administrative access.
 
 ## Camera extension
 

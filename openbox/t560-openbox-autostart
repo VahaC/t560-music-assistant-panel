@@ -22,5 +22,8 @@ tint2 -c "$HOME/.config/tint2/tint2rc" >>"$HOME/.local/state/tint2.log" 2>&1 &
 python3 "$HOME/.local/bin/t560-power-button.py" >>"$HOME/.local/state/power-button.log" 2>&1 &
 
 # Native panel watchdog replaces t560-badwolf-watchdog.
-/usr/bin/t560-panel-watchdog &
-
+panel_watchdog="$HOME/.local/bin/t560-panel-watchdog"
+if [ ! -x "$panel_watchdog" ]; then
+    panel_watchdog=/usr/bin/t560-panel-watchdog
+fi
+"$panel_watchdog" &

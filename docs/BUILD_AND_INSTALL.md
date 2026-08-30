@@ -1,50 +1,51 @@
 # Build and installation guide
 
-This project builds a native application for the existing postmarketOS
-installation. It does not build or flash a postmarketOS disk image, boot image,
-kernel, recovery, or Android firmware.
+This project builds and installs a native application on the existing
+postmarketOS system. It does not build or flash a postmarketOS image, kernel,
+boot image, recovery image, or Android firmware.
 
-The supported deployment artifacts are:
+The instructions below match the current Samsung SM-T560 installation:
 
-1. A small dynamically linked ARMv7 executable named `t560-panel`.
-2. An optional Alpine APK package named `t560-music-panel`.
+- regular SSH access as `vahac`;
+- no privilege-elevation utility and no assumed root password;
+- Dropbear SSH without SCP or SFTP helpers;
+- application files installed under `/home/vahac/.local`;
+- all required GTK and Home Assistant client libraries already present;
+- configuration edited with `nano`.
 
-The direct executable installation is the simplest method and is recommended
-for initial testing. Build an APK after the application has been verified on
-the physical tablet.
+The recommended artifact is the small ARMv7 executable named `t560-panel`.
 
-## Requirements
+## Project locations
 
-Target device:
+Windows source directory:
 
-- Samsung Galaxy Tab E SM-T560 (`gtelwifi`), not the SM-T561.
-- 32-bit ARMv7 postmarketOS/Alpine.
-- X11 with Openbox.
-- GTK3, libsoup 3, and JSON-GLib.
-- A working network connection to Home Assistant.
-- The Media Controller Home Assistant integration from the related ESP32
-  controller project.
-
-Build host options:
-
-- Windows with Docker Desktop and Linux ARM emulation; or
-- the SM-T560 itself over SSH; or
-- another Alpine ARMv7 machine.
-
-## Open the source project
-
-Open the complete folder in Visual Studio Code:
-
-```powershell
-code D:\Sources\t560
+```text
+D:\Sources\t560
 ```
 
-The application source is in `src/main.c`. The project uses a standard
-`Makefile`; no IDE-specific project format is required.
+Tablet installation directories:
 
-## Method 1: Build an ARMv7 executable on Windows
+```text
+/home/vahac/.local/bin
+/home/vahac/.local/state
+/home/vahac/.config/t560-music-panel
+```
 
-Start Docker Desktop, open PowerShell, and run:
+Installed files:
+
+```text
+/home/vahac/.local/bin/t560-panel
+/home/vahac/.local/bin/t560-panel-watchdog
+/home/vahac/.local/bin/t560-open-panel
+/home/vahac/.local/bin/t560-restart-panel
+/home/vahac/.config/t560-music-panel/config.ini
+/home/vahac/.config/t560-music-panel/token
+/home/vahac/.local/share/applications/t560-home-assistant.desktop
+```
+
+## Build the ARMv7 executable on Windows
+
+Start Docker Desktop and open PowerShell:
 
 ```powershell
 cd D:\Sources\t560
@@ -61,316 +62,446 @@ The output file is:
 D:\Sources\t560\t560-panel
 ```
 
-The final `file` output must identify it as an ELF 32-bit ARM EABI5 executable
-using `/lib/ld-musl-armhf.so.1`. Do not copy an x86_64 test build to the tablet.
-
-The application cannot be run directly on Windows because it is an ARM Linux
-executable.
-
-## Method 2: Build directly on the tablet
-
-Copy the project from Windows:
-
-```powershell
-scp -r D:\Sources\t560 vahac@192.168.1.105:/home/vahac/
-```
-
-Use the tablet's current IP address if it is no longer `192.168.1.105`.
-
-Connect over SSH and install build dependencies:
-
-```sh
-ssh vahac@192.168.1.105
-cd /home/vahac/t560
-doas apk add build-base gtk+3.0-dev libsoup3-dev json-glib-dev
-```
-
-Build with a single compiler job to limit peak memory use:
-
-```sh
-make clean
-make -j1
-file t560-panel
-```
-
-The result must be a 32-bit ARM EABI5/musl executable.
-
-## Install the direct executable
-
-Install runtime dependencies on the tablet:
-
-```sh
-doas apk add gtk+3.0 libsoup3 json-glib xdotool
-```
-
-From the project directory, install the application and support files:
-
-```sh
-doas make install
-```
-
-This installs:
+The final `file` output must contain all of the following:
 
 ```text
-/usr/bin/t560-panel
-/usr/bin/t560-panel-watchdog
-/usr/bin/t560-open-panel
-/usr/share/applications/t560-music-panel.desktop
-/etc/t560-music-panel/config.ini.example
+ELF 32-bit
+ARM
+EABI5
+/lib/ld-musl-armhf.so.1
 ```
 
-To install only a prebuilt executable instead, copy it to the tablet and use
-an explicit destination:
+The `gtk_window_set_wmclass` deprecation message is a compiler warning, not a
+build failure. It is intentionally retained for legacy Openbox window matching.
+
+Do not deploy a binary identified as x86-64 or aarch64.
+
+## Define the rootless SSH transfer helper
+
+The current Dropbear server has neither SCP nor SFTP support. Use the existing
+SSH connection to transfer Base64-encoded file content.
+
+Run this once in the current PowerShell session:
 
 ```powershell
-scp D:\Sources\t560\t560-panel vahac@192.168.1.105:/tmp/t560-panel
+$TabletIp = "192.168.1.105"
+
+function Send-T560File {
+    param(
+        [string]$LocalPath,
+        [string]$RemotePath
+    )
+
+    $ResolvedPath = (Resolve-Path -LiteralPath $LocalPath).Path
+    $EncodedData = [Convert]::ToBase64String(
+        [IO.File]::ReadAllBytes($ResolvedPath)
+    )
+    $RemoteCommand = "base64 -d > '$RemotePath'"
+    $EncodedData | ssh.exe "vahac@${TabletIp}" $RemoteCommand
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Transfer failed: $LocalPath"
+    }
+}
 ```
 
-```sh
-doas install -m 0755 /tmp/t560-panel /usr/bin/t560-panel
+Change `$TabletIp` if NetworkManager assigns a different address.
+
+# First installation
+
+Follow every step in this section for a new installation.
+
+## 1. Build the executable
+
+Run the ARMv7 Docker build described above. Confirm that
+`D:\Sources\t560\t560-panel` exists.
+
+## 2. Create user-owned directories
+
+In PowerShell:
+
+```powershell
+ssh.exe "vahac@${TabletIp}" "mkdir -p ~/.local/bin ~/.local/state ~/.local/share/applications ~/.config/t560-music-panel ~/.config/openbox"
 ```
 
-The watchdog and launcher scripts are still required for the documented
-Openbox integration. Install them with `doas make install` or copy them
-separately.
+No root access is required.
 
-## Configure Home Assistant access
+## 3. Transfer application files
 
-Create the per-user configuration directory:
+In the same PowerShell session where `Send-T560File` was defined:
 
-```sh
-mkdir -p "$HOME/.config/t560-music-panel"
-chmod 700 "$HOME/.config/t560-music-panel"
-cp /etc/t560-music-panel/config.ini.example \
-  "$HOME/.config/t560-music-panel/config.ini"
-chmod 600 "$HOME/.config/t560-music-panel/config.ini"
+```powershell
+Send-T560File .\t560-panel /home/vahac/.local/bin/t560-panel
+Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-watchdog
+Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel
+Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel
+Send-T560File .\config\config.ini.example /home/vahac/.config/t560-music-panel/config.ini.example
+Send-T560File .\openbox\t560-openbox-autostart /home/vahac/.config/openbox/autostart.t560-new
+Send-T560File .\data\t560-home-assistant.desktop /home/vahac/.local/share/applications/t560-home-assistant.desktop.new
 ```
 
-Edit `config.ini` over SSH. Replace every placeholder entity ID with the actual
-entity ID shown by Home Assistant:
+Create the initial configuration without overwriting an existing one, and set
+permissions:
 
-```sh
-vi "$HOME/.config/t560-music-panel/config.ini"
+```powershell
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560-panel-watchdog ~/.local/bin/t560-open-panel ~/.local/bin/t560-restart-panel ~/.config/openbox/autostart.t560-new; chmod 700 ~/.config/t560-music-panel; if test ! -f ~/.config/t560-music-panel/config.ini; then cp ~/.config/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini; fi; chmod 600 ~/.config/t560-music-panel/config.ini; mv ~/.local/share/applications/t560-home-assistant.desktop.new ~/.local/share/applications/t560-home-assistant.desktop; chmod 644 ~/.local/share/applications/t560-home-assistant.desktop; ls -l ~/.local/bin/t560-*'
 ```
 
-Required entities:
+## 4. Verify runtime libraries
 
-- Music Assistant `media_player`.
-- Media Controller queue sensor.
-- Media Controller playlists sensor.
+Run:
 
-Light 1, Light 2, Fan, and AC are optional. Remove an unused key instead of
-leaving its placeholder value.
+```powershell
+ssh.exe "vahac@${TabletIp}" 'ldd ~/.local/bin/t560-panel 2>&1; command -v xdotool || echo "xdotool not found"'
+```
 
-Create a dedicated Home Assistant long-lived access token. Store only the
-token value in the separate token file:
+Every library must resolve to an absolute path. Any line containing `not found`
+identifies a real missing dependency.
+
+Do not use `apk info -e` for this check. The current root filesystem contains
+manually installed libraries whose package database records are unavailable.
+
+## 5. Configure Home Assistant entity IDs
+
+Connect to the tablet:
+
+```powershell
+ssh.exe "vahac@${TabletIp}"
+```
+
+Confirm that `nano` is available and edit the configuration:
 
 ```sh
-vi "$HOME/.config/t560-music-panel/token"
+command -v nano
+nano "$HOME/.config/t560-music-panel/config.ini"
+```
+
+Set the actual Home Assistant URL and entity IDs:
+
+```ini
+[home_assistant]
+url=http://192.168.1.100:8123
+
+[entities]
+player=media_player.actual_music_assistant_player
+queue=sensor.actual_controller_queue
+playlists=sensor.actual_controller_playlists
+light_1=light.actual_controller_light_1
+light_2=light.actual_controller_light_2
+fan=switch.actual_controller_fan
+ac=switch.actual_controller_ac
+```
+
+The player, queue, and playlists entities are required. Replace every example
+with the exact entity ID shown by Home Assistant. Remove optional room-control
+keys that are not used.
+
+In `nano`, save with `Ctrl+O`, press `Enter`, and exit with `Ctrl+X`.
+
+## 6. Create the Home Assistant token file
+
+Create a dedicated long-lived access token in the Home Assistant user profile.
+Edit the token file over SSH:
+
+```sh
+nano "$HOME/.config/t560-music-panel/token"
 chmod 600 "$HOME/.config/t560-music-panel/token"
 ```
 
-Never add the token, Home Assistant credentials, Wi-Fi credentials, or SSH
-secrets to this repository.
+The file must contain only the token value, without quotes, labels, or shell
+syntax. Never commit or transfer this token back into the source repository.
 
-## Test before enabling autostart
+## 7. Stop Badwolf for the current session
 
-Run the application from the tablet's graphical session:
+Run as the regular user:
 
 ```sh
-DISPLAY=:0 GTK_THEME=Adwaita:dark /usr/bin/t560-panel
+pkill -f '[t]560-badwolf-watchdog' 2>/dev/null || true
+pkill -x badwolf 2>/dev/null || true
 ```
 
-Verify all of the following:
+This does not change autostart yet.
 
-1. The window opens maximized inside the area not occupied by Tint2.
+## 8. Test the native panel
+
+Run:
+
+```sh
+mkdir -p "$HOME/.local/state"
+export DISPLAY=:0
+if [ -f "$HOME/.Xauthority" ]; then
+    export XAUTHORITY="$HOME/.Xauthority"
+fi
+export GTK_THEME=Adwaita:dark
+
+nohup "$HOME/.local/bin/t560-panel" \
+  >"$HOME/.local/state/t560-music-panel.log" 2>&1 \
+  </dev/null &
+```
+
+Check the process and log:
+
+```sh
+sleep 3
+ps | grep '[t]560-panel'
+tail -n 100 "$HOME/.local/state/t560-music-panel.log"
+```
+
+Verify on the touchscreen:
+
+1. The panel opens maximized.
 2. The status changes from `Connecting` to `Connected`.
-3. Album art, track title, artist, progress, and volume appear.
-4. Previous, Play/Pause, Next, Volume Down, and Volume Up work.
-5. Shuffle and Repeat reflect Home Assistant state.
-6. Queue and playlist selection work with touch only.
-7. Configured room controls reflect state and toggle correctly.
-8. The application never opens Matchbox Keyboard.
-9. The physical Home and Power button behavior remains unchanged.
+3. Album art, title, artist, progress, and volume appear.
+4. Player buttons work.
+5. Queue and playlist selection work.
+6. Configured room controls work.
+7. Matchbox Keyboard does not open.
+8. The physical Home and Power buttons retain their existing behavior.
 
-If the status shows HTTP 401, replace the token. If an entity remains empty,
-verify its exact entity ID in `config.ini`.
+Do not enable autostart until this test passes.
 
-## Enable Openbox autostart
+## 9. Enable the provided Openbox autostart
 
-Back up the current autostart file first:
+The provided autostart keeps Tint2, the cursor helper, and the existing Power
+button handler. It starts neither Badwolf nor Matchbox Keyboard.
 
-```sh
-cp "$HOME/.config/openbox/autostart" \
-  "$HOME/.config/openbox/autostart.before-t560-music-panel"
-```
-
-There are two installation options.
-
-### Minimal change
-
-Edit the existing Openbox autostart file. Remove or comment out:
+Back up the current Openbox autostart only once:
 
 ```sh
-"$HOME/.local/bin/t560-badwolf-watchdog" &
+if [ -f "$HOME/.config/openbox/autostart" ] && \
+   [ ! -f "$HOME/.config/openbox/autostart.before-t560-music-panel" ]; then
+    cp "$HOME/.config/openbox/autostart" \
+       "$HOME/.config/openbox/autostart.before-t560-music-panel"
+fi
 ```
 
-Add:
+Activate the reviewed file:
 
 ```sh
-/usr/bin/t560-panel-watchdog &
+mv "$HOME/.config/openbox/autostart.t560-new" \
+   "$HOME/.config/openbox/autostart"
+chmod 755 "$HOME/.config/openbox/autostart"
 ```
 
-This preserves all other existing startup helpers.
+The Openbox `rc.xml` file is not replaced, so the existing Home and Power button
+mappings remain intact.
 
-### Complete provided autostart
+The existing Tint2 configurations already reference
+`~/.local/share/applications/t560-home-assistant.desktop`. The installed desktop
+entry changes that existing launcher slot into a `Restart Music Panel` button.
+Tint2 reloads the updated launcher after the next login or reboot.
 
-The project includes `openbox/t560-openbox-autostart`. It preserves Tint2, the
-cursor helper, and the existing Power button handler, but does not start
-Badwolf, WebKit, or Matchbox Keyboard.
+## 10. Start the watchdog
 
-Review it before installation, then run:
+Stop the one-off test process and start the persistent watchdog:
 
 ```sh
-install -m 0755 openbox/t560-openbox-autostart \
-  "$HOME/.config/openbox/autostart"
+pkill -x t560-panel 2>/dev/null || true
+nohup "$HOME/.local/bin/t560-panel-watchdog" \
+  >/dev/null 2>&1 </dev/null &
 ```
 
-Merge the application block from `openbox/application.xml` inside the existing
-`<applications>` element in `$HOME/.config/openbox/rc.xml`. Do not replace the
-entire `rc.xml`, because it contains the existing physical button mappings.
-
-Apply the Openbox configuration:
+Verify:
 
 ```sh
-openbox --reconfigure
+sleep 3
+ps | grep '[t]560-panel'
+tail -n 100 "$HOME/.local/state/t560-music-panel.log"
 ```
 
-Log out and back in, or reboot once, to test the complete startup sequence.
+Reboot once after the watchdog test passes. The panel should start with Openbox.
 
-## Logs and process control
+# Update an existing installation
 
-The watchdog writes application output to:
+Use this procedure for every later source-code update. It preserves
+`config.ini`, the Home Assistant token, and the Openbox configuration.
+
+## 1. Rebuild the ARMv7 executable
+
+On Windows, run the Docker build from the beginning of this document:
+
+```powershell
+cd D:\Sources\t560
+
+docker run --rm --platform linux/arm/v7 `
+  -v "D:\Sources\t560:/src" `
+  -w /src alpine:3.20 `
+  sh -lc "apk add --no-cache build-base gtk+3.0-dev libsoup3-dev json-glib-dev file && make clean && make && file t560-panel"
+```
+
+## 2. Define the transfer helper
+
+Define `$TabletIp` and `Send-T560File` again if this is a new PowerShell session.
+
+## 3. Transfer update candidates
+
+Transfer new files with `.new` suffixes so a failed transfer cannot damage the
+currently installed application:
+
+```powershell
+Send-T560File .\t560-panel /home/vahac/.local/bin/t560-panel.new
+Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-watchdog.new
+Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel.new
+Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel.new
+```
+
+Do not transfer `config.ini` or `token` during an update.
+
+## 4. Validate the new executable
+
+Run:
+
+```powershell
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel.new ~/.local/bin/t560-panel-watchdog.new ~/.local/bin/t560-open-panel.new ~/.local/bin/t560-restart-panel.new; ldd ~/.local/bin/t560-panel.new 2>&1'
+```
+
+Stop if any dependency is reported as `not found`.
+
+## 5. Atomically activate the update
+
+Connect to the tablet:
+
+```powershell
+ssh.exe "vahac@${TabletIp}"
+```
+
+Stop the watchdog and application:
+
+```sh
+pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
+pkill -x t560-panel 2>/dev/null || true
+```
+
+Keep one rollback copy and activate the new files:
+
+```sh
+cp "$HOME/.local/bin/t560-panel" \
+   "$HOME/.local/bin/t560-panel.previous"
+cp "$HOME/.local/bin/t560-panel-watchdog" \
+   "$HOME/.local/bin/t560-panel-watchdog.previous"
+cp "$HOME/.local/bin/t560-open-panel" \
+   "$HOME/.local/bin/t560-open-panel.previous"
+cp "$HOME/.local/bin/t560-restart-panel" \
+   "$HOME/.local/bin/t560-restart-panel.previous"
+
+mv "$HOME/.local/bin/t560-panel.new" \
+   "$HOME/.local/bin/t560-panel"
+mv "$HOME/.local/bin/t560-panel-watchdog.new" \
+   "$HOME/.local/bin/t560-panel-watchdog"
+mv "$HOME/.local/bin/t560-open-panel.new" \
+   "$HOME/.local/bin/t560-open-panel"
+mv "$HOME/.local/bin/t560-restart-panel.new" \
+   "$HOME/.local/bin/t560-restart-panel"
+
+chmod 755 "$HOME/.local/bin/t560-panel" \
+          "$HOME/.local/bin/t560-panel-watchdog" \
+          "$HOME/.local/bin/t560-open-panel" \
+          "$HOME/.local/bin/t560-restart-panel"
+```
+
+## 6. Restart and verify
+
+```sh
+: >"$HOME/.local/state/t560-music-panel.log"
+nohup "$HOME/.local/bin/t560-panel-watchdog" \
+  >/dev/null 2>&1 </dev/null &
+
+sleep 3
+ps | grep '[t]560-panel'
+tail -n 100 "$HOME/.local/state/t560-music-panel.log"
+```
+
+Verify the main player page and at least one Home Assistant action on the
+touchscreen.
+
+## 7. Roll back a failed update
+
+If the new version fails:
+
+```sh
+pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
+pkill -x t560-panel 2>/dev/null || true
+
+mv "$HOME/.local/bin/t560-panel.previous" \
+   "$HOME/.local/bin/t560-panel"
+mv "$HOME/.local/bin/t560-panel-watchdog.previous" \
+   "$HOME/.local/bin/t560-panel-watchdog"
+mv "$HOME/.local/bin/t560-open-panel.previous" \
+   "$HOME/.local/bin/t560-open-panel"
+mv "$HOME/.local/bin/t560-restart-panel.previous" \
+   "$HOME/.local/bin/t560-restart-panel"
+
+chmod 755 "$HOME/.local/bin/t560-panel" \
+          "$HOME/.local/bin/t560-panel-watchdog" \
+          "$HOME/.local/bin/t560-open-panel" \
+          "$HOME/.local/bin/t560-restart-panel"
+
+nohup "$HOME/.local/bin/t560-panel-watchdog" \
+  >/dev/null 2>&1 </dev/null &
+```
+
+# Change configuration later
+
+Edit configuration with `nano`:
+
+```sh
+nano "$HOME/.config/t560-music-panel/config.ini"
+```
+
+Restart the application after saving:
+
+```sh
+pkill -x t560-panel
+```
+
+The watchdog starts it again within two seconds.
+
+# Logs and diagnostics
+
+Application log:
 
 ```text
-~/.local/state/t560-music-panel.log
+/home/vahac/.local/state/t560-music-panel.log
 ```
 
-Follow the log over SSH:
+Follow it over SSH:
 
 ```sh
 tail -f "$HOME/.local/state/t560-music-panel.log"
 ```
 
-Stop the watchdog before stopping the application, otherwise it restarts the
-application after two seconds:
+Common conditions:
 
-```sh
-pkill -f '/usr/bin/t560-panel-watchdog'
-pkill -x t560-panel
-```
+- `Home Assistant HTTP 401`: replace the token.
+- `Connected` with empty controls: correct the entity IDs in `config.ini`.
+- `cannot open display`: confirm `DISPLAY=:0` and the X session owner.
+- `not found` in `ldd`: the corresponding shared library is genuinely missing.
+- immediate watchdog restart loop: inspect the log before restarting again.
 
-Start it again with:
-
-```sh
-/usr/bin/t560-panel-watchdog &
-```
-
-## Update an existing installation
-
-Build a new executable, stop the watchdog, replace the installed file, and
-start the watchdog again:
-
-```sh
-pkill -f '/usr/bin/t560-panel-watchdog'
-pkill -x t560-panel
-doas install -m 0755 ./t560-panel /usr/bin/t560-panel
-/usr/bin/t560-panel-watchdog &
-```
-
-Configuration and tokens in `$HOME/.config/t560-music-panel` are not replaced
-by `make install`.
-
-## Build and install an Alpine APK
-
-Build the APK on the tablet or another Alpine ARMv7 system. Alpine does not
-automatically cross-compile an ARMv7 APK from an x86_64 `abuild` environment.
-
-Install the Alpine packaging tools and give the SSH user access to `abuild`:
-
-```sh
-doas apk add alpine-sdk
-doas addgroup vahac abuild
-```
-
-Log out and reconnect so the new group is active. Create a local signing key if
-one does not already exist:
-
-```sh
-abuild-keygen -a -i
-```
-
-Create the source archive expected by `packaging/APKBUILD`:
-
-```sh
-cd /home/vahac
-cp -a t560 t560-music-panel-0.1.0
-tar -czf t560/packaging/t560-music-panel-0.1.0.tar.gz \
-  --exclude='.git' \
-  --exclude='t560-panel' \
-  t560-music-panel-0.1.0
-cd t560/packaging
-```
-
-Generate the real checksum, build, and sign the package:
-
-```sh
-abuild checksum
-abuild -r
-```
-
-The resulting package is normally placed below:
-
-```text
-~/packages/*/armv7/t560-music-panel-0.1.0-r0.apk
-```
-
-Install the exact generated file with:
-
-```sh
-doas apk add --allow-untrusted \
-  "$HOME/packages"/*/armv7/t560-music-panel-0.1.0-r0.apk
-```
-
-If the local signing key was installed into Alpine's trusted keys by
-`abuild-keygen -i`, `--allow-untrusted` is not required.
-
-The APK installs the application files but intentionally does not write a Home
-Assistant URL, entity ID, or token into a user's home directory.
-
-## Roll back to Badwolf
+# Restore the previous Badwolf autostart
 
 Stop the native panel:
 
 ```sh
-pkill -f '/usr/bin/t560-panel-watchdog'
-pkill -x t560-panel
+pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
+pkill -x t560-panel 2>/dev/null || true
 ```
 
-Restore the saved Openbox autostart file:
+Restore the saved file:
 
 ```sh
 cp "$HOME/.config/openbox/autostart.before-t560-music-panel" \
-  "$HOME/.config/openbox/autostart"
+   "$HOME/.config/openbox/autostart"
+chmod 755 "$HOME/.config/openbox/autostart"
 ```
 
-Restore the previous Openbox application configuration if it was modified,
-then run:
+No postmarketOS reflash is required.
 
-```sh
-openbox --reconfigure
-```
+# Optional APK packaging
 
-The Home Assistant configuration and token can remain in place for a later
-retry. No postmarketOS reflash is required.
+The project includes `packaging/APKBUILD`, but APK installation is not the
+recommended method on the current tablet because system-wide package
+installation requires administrative access. Use the rootless procedure above.
 
+Build and sign an APK only after administrative access has been intentionally
+configured and the rootless installation has been verified on the hardware.
