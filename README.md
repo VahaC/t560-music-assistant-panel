@@ -22,7 +22,9 @@ or an on-screen keyboard. All settings are edited over SSH.
 - A separate token file with `0600` permissions.
 - Watchdog, desktop entry, Openbox rule, and ARMv7 `APKBUILD`.
 - A short Power press turns the display off; any key or touchscreen input wakes it.
-- The existing long-press Power menu and physical Home button behavior are retained.
+- The physical Home button toggles between the panel and desktop while the
+  display is on, and only wakes the display while it is off.
+- The existing long-press Power menu is retained.
 
 ## Tablet configuration files
 
@@ -79,13 +81,14 @@ existing SSH connection without requiring SCP, SFTP, or administrative access.
 The ready-to-use [t560-openbox-autostart](openbox/t560-openbox-autostart)
 starts Tint2, the cursor helper, and the included Power button handler. A short
 Power press turns the display off, while any key or touchscreen input wakes it.
-The handler retains the existing long-press Power menu. The autostart does not
-start Badwolf, WebKit, or Matchbox Keyboard. Back up the current autostart file
-before replacing it.
+The same handler makes Home screen-aware and retains the existing long-press
+Power menu. The autostart does not start Badwolf, WebKit, or Matchbox Keyboard.
+Back up the current autostart file before replacing it.
 
 The first-installation procedure transfers the provided file as a candidate,
 backs up the current Openbox autostart, tests the panel, and activates the new
-autostart only after the test succeeds. It does not replace `rc.xml`.
+autostart only after the test succeeds. The configuration helper changes only
+the `Home` and `XF86HomePage` key bindings in `rc.xml` and keeps a backup.
 
 ## Alpine APK
 

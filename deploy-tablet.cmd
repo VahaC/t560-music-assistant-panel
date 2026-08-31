@@ -42,6 +42,8 @@ for %%F in (
     "scripts\t560-open-panel"
     "scripts\t560-restart-panel"
     "scripts\t560-power-button.py"
+    "scripts\t560-home-button"
+    "scripts\t560-configure-openbox.py"
 ) do (
     if not exist "%%~F" (
         echo ERROR: Missing local file: %%~F
@@ -63,9 +65,13 @@ call :send_file "scripts\t560-restart-panel" "%REMOTE_BIN%/t560-restart-panel.ne
 if errorlevel 1 goto :failure
 call :send_file "scripts\t560-power-button.py" "%REMOTE_BIN%/t560-power-button.py.new"
 if errorlevel 1 goto :failure
+call :send_file "scripts\t560-home-button" "%REMOTE_BIN%/t560-home-button.new"
+if errorlevel 1 goto :failure
+call :send_file "scripts\t560-configure-openbox.py" "%REMOTE_BIN%/t560-configure-openbox.py.new"
+if errorlevel 1 goto :failure
 
 echo Validating runtime dependencies...
-"%SSH_EXE%" "%TABLET_TARGET%" "set -eu; chmod 755 '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-power-button.py.new'; python3 -m py_compile '%REMOTE_BIN%/t560-power-button.py.new'; ldd '%REMOTE_BIN%/t560-panel.new' > '%REMOTE_STATE%/t560-deploy-ldd.log' 2>&1; cat '%REMOTE_STATE%/t560-deploy-ldd.log'; if grep -q 'not found' '%REMOTE_STATE%/t560-deploy-ldd.log'; then echo 'ERROR: A runtime dependency is missing.' >&2; exit 1; fi"
+"%SSH_EXE%" "%TABLET_TARGET%" "set -eu; chmod 755 '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-home-button.new' '%REMOTE_BIN%/t560-configure-openbox.py.new'; python3 -m py_compile '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-configure-openbox.py.new'; ldd '%REMOTE_BIN%/t560-panel.new' > '%REMOTE_STATE%/t560-deploy-ldd.log' 2>&1; cat '%REMOTE_STATE%/t560-deploy-ldd.log'; if grep -q 'not found' '%REMOTE_STATE%/t560-deploy-ldd.log'; then echo 'ERROR: A runtime dependency is missing.' >&2; exit 1; fi"
 if errorlevel 1 goto :failure
 
 echo Activating the update and restarting the panel...
@@ -73,10 +79,13 @@ echo Activating the update and restarting the panel...
 "%SSH_EXE%" "%TABLET_TARGET%" "pkill -x t560-panel" >nul 2>&1
 "%SSH_EXE%" "%TABLET_TARGET%" "pkill -f '[t]560-power-button.py'" >nul 2>&1
 
-"%SSH_EXE%" "%TABLET_TARGET%" "cp '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel.previous'; cp '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-panel-watchdog.previous'; cp '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-open-panel.previous'; cp '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-restart-panel.previous'; cp '%REMOTE_BIN%/t560-power-button.py' '%REMOTE_BIN%/t560-power-button.py.previous'"
+"%SSH_EXE%" "%TABLET_TARGET%" "cp '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel.previous'; cp '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-panel-watchdog.previous'; cp '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-open-panel.previous'; cp '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-restart-panel.previous'; cp '%REMOTE_BIN%/t560-power-button.py' '%REMOTE_BIN%/t560-power-button.py.previous'; if test -f '%REMOTE_BIN%/t560-home-button'; then cp '%REMOTE_BIN%/t560-home-button' '%REMOTE_BIN%/t560-home-button.previous'; fi; if test -f '%REMOTE_BIN%/t560-configure-openbox.py'; then cp '%REMOTE_BIN%/t560-configure-openbox.py' '%REMOTE_BIN%/t560-configure-openbox.py.previous'; fi; cp '%REMOTE_HOME%/.config/openbox/rc.xml' '%REMOTE_HOME%/.config/openbox/rc.xml.t560-deploy-previous'"
 if errorlevel 1 goto :failure
 
-"%SSH_EXE%" "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-power-button.py'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py'"
+"%SSH_EXE%" "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-power-button.py'; mv '%REMOTE_BIN%/t560-home-button.new' '%REMOTE_BIN%/t560-home-button'; mv '%REMOTE_BIN%/t560-configure-openbox.py.new' '%REMOTE_BIN%/t560-configure-openbox.py'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py' '%REMOTE_BIN%/t560-home-button' '%REMOTE_BIN%/t560-configure-openbox.py'"
+if errorlevel 1 goto :rollback
+
+"%SSH_EXE%" "%TABLET_TARGET%" "'%REMOTE_BIN%/t560-configure-openbox.py' '%REMOTE_HOME%/.config/openbox/rc.xml' && DISPLAY=:0 openbox --reconfigure"
 if errorlevel 1 goto :rollback
 
 "%SSH_EXE%" "%TABLET_TARGET%" "'%REMOTE_BIN%/t560-restart-panel'"
@@ -85,7 +94,7 @@ if errorlevel 1 goto :rollback
 if errorlevel 1 goto :rollback
 
 powershell.exe -NoProfile -Command "Start-Sleep -Seconds 4"
-"%SSH_EXE%" "%TABLET_TARGET%" "pgrep -x t560-panel; pgrep -f '[t]560-panel-watchdog'; pgrep -f '[t]560-power-button.py'; tail -n 20 '%REMOTE_STATE%/t560-music-panel.log'; tail -n 5 '%REMOTE_STATE%/power-button.log'"
+"%SSH_EXE%" "%TABLET_TARGET%" "pgrep -x t560-panel; pgrep -f '[t]560-panel-watchdog'; pgrep -f '[t]560-power-button.py'; grep -q '%REMOTE_BIN%/t560-home-button' '%REMOTE_HOME%/.config/openbox/rc.xml'; tail -n 20 '%REMOTE_STATE%/t560-music-panel.log'; tail -n 5 '%REMOTE_STATE%/power-button.log'"
 if errorlevel 1 goto :rollback
 
 set "REMOTE_SHA_FILE=%TEMP%\t560-remote-sha256-%RANDOM%-%RANDOM%.txt"
@@ -111,7 +120,7 @@ echo ERROR: The updated panel did not pass the runtime check. Restoring the prev
 "%SSH_EXE%" "%TABLET_TARGET%" "pkill -f '[t]560-panel-watchdog'" >nul 2>&1
 "%SSH_EXE%" "%TABLET_TARGET%" "pkill -x t560-panel" >nul 2>&1
 "%SSH_EXE%" "%TABLET_TARGET%" "pkill -f '[t]560-power-button.py'" >nul 2>&1
-"%SSH_EXE%" "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.previous' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.previous' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.previous' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.previous' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.previous' '%REMOTE_BIN%/t560-power-button.py'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py'"
+"%SSH_EXE%" "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.previous' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.previous' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.previous' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.previous' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.previous' '%REMOTE_BIN%/t560-power-button.py'; if test -f '%REMOTE_BIN%/t560-home-button.previous'; then mv '%REMOTE_BIN%/t560-home-button.previous' '%REMOTE_BIN%/t560-home-button'; else rm -f '%REMOTE_BIN%/t560-home-button'; fi; if test -f '%REMOTE_BIN%/t560-configure-openbox.py.previous'; then mv '%REMOTE_BIN%/t560-configure-openbox.py.previous' '%REMOTE_BIN%/t560-configure-openbox.py'; else rm -f '%REMOTE_BIN%/t560-configure-openbox.py'; fi; if test -f '%REMOTE_HOME%/.config/openbox/rc.xml.t560-deploy-previous'; then mv '%REMOTE_HOME%/.config/openbox/rc.xml.t560-deploy-previous' '%REMOTE_HOME%/.config/openbox/rc.xml'; fi; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py'; DISPLAY=:0 openbox --reconfigure"
 "%SSH_EXE%" "%TABLET_TARGET%" "'%REMOTE_BIN%/t560-restart-panel'"
 "%SSH_EXE%" "%TABLET_TARGET%" "nohup python3 '%REMOTE_BIN%/t560-power-button.py' >>'%REMOTE_STATE%/power-button.log' 2>&1 </dev/null &"
 goto :failure

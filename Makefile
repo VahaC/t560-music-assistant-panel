@@ -1,6 +1,7 @@
 PREFIX ?= /usr
 CC ?= cc
 PKG_CONFIG ?= pkg-config
+PYTHON ?= python3
 
 PACKAGES = gtk+-3.0 libsoup-3.0 json-glib-1.0
 TARGET = t560-panel
@@ -40,6 +41,7 @@ $(TEST_TARGET): $(TEST_OBJECTS)
 
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)
+	$(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 
 clean:
 	rm -f $(TARGET) $(OBJECTS) $(DEPFILES) tests/*.o tests/*.d $(TEST_TARGET)
@@ -49,6 +51,9 @@ install: t560-panel
 	install -Dm755 scripts/t560-panel-watchdog "$(DESTDIR)$(PREFIX)/bin/t560-panel-watchdog"
 	install -Dm755 scripts/t560-open-panel "$(DESTDIR)$(PREFIX)/bin/t560-open-panel"
 	install -Dm755 scripts/t560-restart-panel "$(DESTDIR)$(PREFIX)/bin/t560-restart-panel"
+	install -Dm755 scripts/t560-power-button.py "$(DESTDIR)$(PREFIX)/bin/t560-power-button.py"
+	install -Dm755 scripts/t560-home-button "$(DESTDIR)$(PREFIX)/bin/t560-home-button"
+	install -Dm755 scripts/t560-configure-openbox.py "$(DESTDIR)$(PREFIX)/bin/t560-configure-openbox.py"
 	install -Dm644 config/config.ini.example "$(DESTDIR)/etc/t560-music-panel/config.ini.example"
 	install -Dm644 data/t560-music-panel.desktop "$(DESTDIR)$(PREFIX)/share/applications/t560-music-panel.desktop"
 

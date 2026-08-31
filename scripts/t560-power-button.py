@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 
-"""Turn the display off on a short Power press and wake it on any input."""
+"""Handle the physical Power and Home buttons without blocking the GTK app."""
 
 import ctypes
 import os
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -17,6 +18,8 @@ KEY_RELEASE_MASK = 1 << 1
 GRAB_MODE_ASYNC = 1
 ANY_MODIFIER = 1 << 15
 XF86_POWER_OFF = 0x1008FF2A
+XK_HOME = 0xFF50
+XF86_HOME_PAGE = 0x1008FF18
 DPMS_MODE_ON = 0
 DPMS_MODE_OFF = 3
 LONG_PRESS_SECONDS = 1.5
@@ -108,6 +111,14 @@ subprocess.run(
     env={**os.environ, "DISPLAY": ":0"},
     check=False,
 )
+for home_keysym in (XK_HOME, XF86_HOME_PAGE):
+    home_keycode = int(x11.XKeysymToKeycode(display, home_keysym))
+    if home_keycode:
+        subprocess.run(
+            ["xset", "-r", str(home_keycode)],
+            env={**os.environ, "DISPLAY": ":0"},
+            check=False,
+        )
 subprocess.run(
     ["xset", "dpms", "0", "0", "0"],
     env={**os.environ, "DISPLAY": ":0"},
@@ -140,6 +151,18 @@ def force_dpms(level):
     x11.XFlush(display)
 
 
+def toggle_desktop():
+    result = subprocess.run(
+        ["xdotool", "key", "--clearmodifiers", "Super+d"],
+        env={**os.environ, "DISPLAY": ":0"},
+        check=False,
+    )
+    if result.returncode:
+        log(f"ERROR: desktop toggle failed with exit code {result.returncode}")
+        return
+    log("home: toggled application and desktop")
+
+
 monitor_on = dpms_level() == DPMS_MODE_ON
 pressed = False
 press_started = 0.0
@@ -148,6 +171,11 @@ long_fired = False
 next_poll = time.monotonic() + POLL_SECONDS
 connection = x11.XConnectionNumber(display)
 event = XEvent()
+signal_read, signal_write = os.pipe()
+os.set_blocking(signal_read, False)
+os.set_blocking(signal_write, False)
+signal.set_wakeup_fd(signal_write)
+signal.signal(signal.SIGUSR1, lambda _signum, _frame: None)
 
 log(f"started: keycode={keycode}, monitor_on={monitor_on}")
 
@@ -157,7 +185,21 @@ while True:
     if pressed and not long_fired:
         deadlines.append(press_started + LONG_PRESS_SECONDS)
     timeout = max(0.0, min(deadlines) - now)
-    select.select([connection], [], [], timeout)
+    readable, _, _ = select.select([connection, signal_read], [], [], timeout)
+
+    if signal_read in readable:
+        try:
+            home_requests = os.read(signal_read, 4096).count(signal.SIGUSR1)
+        except BlockingIOError:
+            home_requests = 0
+
+        for _ in range(home_requests):
+            if monitor_on:
+                toggle_desktop()
+            else:
+                force_dpms(DPMS_MODE_ON)
+                monitor_on = True
+                log("home: woke display without toggling desktop")
 
     while x11.XPending(display):
         x11.XNextEvent(display, ctypes.byref(event))
