@@ -46,6 +46,51 @@ class ConfigureOpenboxTest(unittest.TestCase):
         self.assertIn('keybind key="A-F4"', configured)
         self.assertEqual(CONFIGURE_OPENBOX.configure(configured), configured)
 
+    def test_replaces_existing_panel_application_rule(self):
+        source = """<openbox_config>
+<keyboard>
+</keyboard>
+<applications>
+  <application name="other-app">
+    <fullscreen>no</fullscreen>
+  </application>
+  <application name="t560-music-panel" class="T560MusicPanel">
+    <fullscreen>no</fullscreen>
+    <maximized>yes</maximized>
+  </application>
+</applications>
+</openbox_config>
+"""
+
+        configured = CONFIGURE_OPENBOX.configure(source)
+        root = element_tree.fromstring(configured)
+        rules = {
+            application.get("name"): application
+            for application in root.iter("application")
+        }
+
+        self.assertEqual(rules["other-app"].find("fullscreen").text, "no")
+        panel = rules["t560-music-panel"]
+        self.assertEqual(panel.find("fullscreen").text, "yes")
+        self.assertEqual(panel.find("decor").text, "no")
+        self.assertEqual(configured.count('name="t560-music-panel"'), 1)
+
+    def test_adds_applications_section_when_missing(self):
+        source = """<openbox_config>
+<keyboard>
+</keyboard>
+</openbox_config>
+"""
+
+        configured = CONFIGURE_OPENBOX.configure(source)
+        root = element_tree.fromstring(configured)
+        panel = root.find("./applications/application")
+
+        self.assertEqual(panel.get("name"), "t560-music-panel")
+        self.assertEqual(panel.get("class"), "T560MusicPanel")
+        self.assertEqual(panel.find("fullscreen").text, "yes")
+        self.assertEqual(CONFIGURE_OPENBOX.configure(configured), configured)
+
 
 if __name__ == "__main__":
     unittest.main()

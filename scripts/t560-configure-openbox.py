@@ -1,6 +1,10 @@
 #!/usr/bin/python3
 
-"""Route the physical Home keys through the screen-aware button handler."""
+"""Configure Openbox for the panel.
+
+Routes the physical Home keys through the screen-aware button handler and
+keeps the fullscreen application rule of the panel window in place.
+"""
 
 import os
 import re
@@ -18,6 +22,22 @@ KEYBIND_PATTERN = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 KEY_ATTRIBUTE_PATTERN = re.compile(r"\bkey\s*=\s*(['\"])(?P<key>.*?)\1")
+APPLICATION_NAME = "t560-music-panel"
+APPLICATION_CLASS = "T560MusicPanel"
+APPLICATION_SETTINGS = (
+    ("decor", "no"),
+    ("focus", "yes"),
+    ("desktop", "all"),
+    ("layer", "normal"),
+    ("fullscreen", "yes"),
+    ("maximized", "yes"),
+)
+APPLICATION_PATTERN = re.compile(
+    r"^(?P<indent>[ \t]*)<application\b(?P<attributes>[^>]*)>.*?"
+    r"</application>[ \t]*(?=\r?$)",
+    re.MULTILINE | re.DOTALL,
+)
+NAME_ATTRIBUTE_PATTERN = re.compile(r"\bname\s*=\s*(['\"])(?P<name>.*?)\1")
 
 
 def keybinding(key, indent="  "):
@@ -31,7 +51,58 @@ def keybinding(key, indent="  "):
     )
 
 
-def configure(contents):
+def application_rule(indent="  "):
+    child_indent = indent + "  "
+    settings = "".join(
+        f"{child_indent}<{name}>{value}</{name}>\n"
+        for name, value in APPLICATION_SETTINGS
+    )
+    return (
+        f'{indent}<application name="{APPLICATION_NAME}"'
+        f' class="{APPLICATION_CLASS}">\n'
+        f"{settings}"
+        f"{indent}</application>"
+    )
+
+
+def configure_applications(contents):
+    """Keep the panel window fullscreen and undecorated."""
+
+    found = False
+
+    def replace_rule(match):
+        nonlocal found
+        name_match = NAME_ATTRIBUTE_PATTERN.search(match.group("attributes"))
+        if not name_match or name_match.group("name") != APPLICATION_NAME:
+            return match.group(0)
+
+        found = True
+        return application_rule(match.group("indent"))
+
+    configured = APPLICATION_PATTERN.sub(replace_rule, contents)
+    if found:
+        return configured
+
+    closing_applications = configured.find("</applications>")
+    if closing_applications >= 0:
+        return (
+            configured[:closing_applications]
+            + application_rule()
+            + "\n"
+            + configured[closing_applications:]
+        )
+
+    closing_config = configured.find("</openbox_config>")
+    if closing_config < 0:
+        raise ValueError("Openbox configuration has no </openbox_config> element")
+
+    section = "<applications>\n" + application_rule() + "\n</applications>\n"
+    return configured[:closing_config] + section + configured[closing_config:]
+
+
+def configure_keyboard(contents):
+    """Route the physical Home keys through the button handler."""
+
     found = set()
 
     def replace_binding(match):
@@ -54,6 +125,11 @@ def configure(contents):
             configured[:closing_keyboard] + addition + configured[closing_keyboard:]
         )
 
+    return configured
+
+
+def configure(contents):
+    configured = configure_applications(configure_keyboard(contents))
     element_tree.fromstring(configured)
     return configured
 
@@ -67,7 +143,7 @@ def main():
 
     configured = configure(contents)
     if configured == contents:
-        print(f"Openbox Home bindings already configured: {path}")
+        print(f"Openbox panel integration already configured: {path}")
         return
 
     backup = path + ".before-t560-home-button"
@@ -80,7 +156,7 @@ def main():
         destination.write(configured)
     os.chmod(temporary, mode)
     os.replace(temporary, path)
-    print(f"Configured Openbox Home bindings: {path}")
+    print(f"Configured Openbox panel integration: {path}")
 
 
 if __name__ == "__main__":

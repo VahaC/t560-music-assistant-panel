@@ -30,6 +30,10 @@ GtkWidget *panel_ui_build_config_error(const gchar *message);
 void panel_ui_install_styles(void);
 
 void panel_ui_set_status(PanelUi *ui, const gchar *text, gboolean is_error);
+void panel_ui_set_clock(PanelUi *ui, const gchar *time_text,
+                        const gchar *date_text);
+void panel_ui_set_battery(PanelUi *ui, gboolean available, gint percent,
+                          gboolean charging);
 void panel_ui_set_player(PanelUi *ui, gboolean playing, const gchar *title,
                          const gchar *artist, gdouble position,
                          gdouble duration, gdouble volume, gboolean shuffle,

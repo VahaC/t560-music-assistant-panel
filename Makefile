@@ -11,7 +11,8 @@ SOURCES = src/main.c \
 	  src/app_config.c \
 	  src/home_assistant_client.c \
 	  src/json_helpers.c \
-	  src/panel_ui.c
+	  src/panel_ui.c \
+	  src/system_status.c
 OBJECTS = $(SOURCES:.c=.o)
 DEPFILES = $(OBJECTS:.o=.d)
 TEST_OBJECTS = tests/test_json_helpers.o src/json_helpers.o

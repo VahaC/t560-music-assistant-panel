@@ -12,6 +12,13 @@ or an on-screen keyboard. All settings are edited over SSH.
 ## Implemented features
 
 - Native dark UI designed for the 800x1219 usable screen area.
+- The window runs fullscreen and covers the whole display, without
+  decorations or window manager panels above it.
+- A header row with the page title, a centered clock showing the time and
+  the date, a Home Assistant link icon, and an upright battery indicator
+  with the charge percentage.
+- The battery indicator turns green and shows a bolt while the tablet is
+  charging, and amber or red as the charge drops.
 - Album art, track title, artist, playback progress, and volume.
 - Previous, Play/Pause, Next, Volume Down, and Volume Up controls.
 - Shuffle and Repeat Off/All/One controls.
@@ -57,6 +64,8 @@ The application is split into focused C modules with explicit interfaces:
 - `home_assistant_client` encapsulates authenticated asynchronous HTTP I/O;
 - `panel_ui` builds and updates GTK widgets without knowing API details;
 - `json_helpers` contains reusable, unit-tested JSON accessors;
+- `system_status` reads the battery charge and charging state from
+  `/sys/class/power_supply`;
 - `main` is the minimal process entry point.
 
 The Makefile tracks header dependencies automatically. Run `make test` for the

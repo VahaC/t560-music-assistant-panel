@@ -248,6 +248,10 @@ This does not change autostart yet.
 
 ## 8. Test the native panel
 
+`t560-configure-openbox.py` rewrites both the Home key bindings and the
+`t560-music-panel` application rule, which keeps the panel window
+fullscreen and undecorated.
+
 Run:
 
 ```sh
@@ -279,20 +283,26 @@ tail -n 100 "$HOME/.local/state/t560-music-panel.log"
 
 Verify on the touchscreen:
 
-1. The panel opens maximized.
-2. The status changes from `Connecting` to `Connected`.
-3. Album art, title, artist, progress, and volume appear.
-4. Player buttons work.
-5. Queue and playlist selection work.
-6. Configured room controls work.
-7. Matchbox Keyboard does not open.
-8. A short Power press turns the display off.
-9. Any physical key or touchscreen input wakes the display, and the
-   wake-up tap does not activate the control under the finger.
-10. A long Power press opens the existing power menu.
-11. Home toggles between the panel and desktop while the display is on.
-12. If the display is off, Home wakes it without toggling the panel.
-13. The display turns off on its own after `screen_off_seconds` without input,
+1. The panel opens fullscreen and no panel or decoration is visible
+   above it.
+2. The link icon in the header turns from amber to teal once the first
+   poll succeeds, and becomes a red broken link when Home Assistant is
+   unreachable.
+3. The header clock shows the current time and date.
+4. The upright battery indicator shows the charge percentage, and turns
+   green with a bolt within ten seconds of connecting the charger.
+5. Album art, title, artist, progress, and volume appear.
+6. Player buttons work.
+7. Queue and playlist selection work.
+8. Configured room controls work.
+9. Matchbox Keyboard does not open.
+10. A short Power press turns the display off.
+11. Any physical key or touchscreen input wakes the display, and the
+    wake-up tap does not activate the control under the finger.
+12. A long Power press opens the existing power menu.
+13. Home toggles between the panel and desktop while the display is on.
+14. If the display is off, Home wakes it without toggling the panel.
+15. The display turns off on its own after `screen_off_seconds` without input,
     and any touch wakes it again.
 
 Do not enable autostart until this test passes.
@@ -586,7 +596,8 @@ tail -f "$HOME/.local/state/t560-music-panel.log"
 Common conditions:
 
 - `Home Assistant HTTP 401`: replace the token.
-- `Connected` with empty controls: correct the entity IDs in `config.ini`.
+- A teal link icon with empty controls: correct the entity IDs in
+  `config.ini`.
 - `cannot open display`: confirm `DISPLAY=:0` and the X session owner.
 - `not found` in `ldd`: the corresponding shared library is genuinely missing.
 - immediate watchdog restart loop: inspect the log before restarting again.

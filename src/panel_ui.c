@@ -1,11 +1,25 @@
 #include "panel_ui.h"
 
+typedef enum {
+    PANEL_STATUS_CONNECTING,
+    PANEL_STATUS_CONNECTED,
+    PANEL_STATUS_ERROR
+} PanelStatusState;
+
 struct _PanelUi {
     const AppConfig *config;
     PanelUiEventHandler event_handler;
     gpointer event_user_data;
     GtkWidget *stack;
     GtkWidget *status;
+    PanelStatusState status_state;
+    GtkWidget *clock_time;
+    GtkWidget *clock_date;
+    GtkWidget *battery_box;
+    GtkWidget *battery_icon;
+    GtkWidget *battery_level;
+    gint battery_percent;
+    gboolean battery_charging;
     GtkWidget *page_title;
     GtkWidget *album_art;
     GtkWidget *track_title;
@@ -479,6 +493,170 @@ void panel_ui_free(PanelUi *ui)
     g_free(ui);
 }
 
+/* The header indicators are drawn with Cairo so that they do not depend on
+ * the icon theme installed on the tablet and can be tinted per state. */
+#define PANEL_PI 3.14159265358979323846
+#define PANEL_COLOR_ACCENT 0x56e5dcU
+#define PANEL_COLOR_CHARGING 0x5ce48aU
+#define PANEL_COLOR_WARNING 0xffc36bU
+#define PANEL_COLOR_ALERT 0xff8a94U
+#define PANEL_COLOR_OUTLINE 0x6d86a5U
+#define PANEL_COLOR_BOLT 0xf7faffU
+#define PANEL_COLOR_HEADER 0x0c1420U
+
+static void set_source_color(cairo_t *cr, guint color, gdouble alpha)
+{
+    cairo_set_source_rgba(cr, ((color >> 16) & 0xffU) / 255.0,
+                          ((color >> 8) & 0xffU) / 255.0,
+                          (color & 0xffU) / 255.0, alpha);
+}
+
+static void rounded_rectangle(cairo_t *cr, gdouble x, gdouble y, gdouble width,
+                              gdouble height, gdouble radius)
+{
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, x + width - radius, y + radius, radius, -0.5 * PANEL_PI, 0.0);
+    cairo_arc(cr, x + width - radius, y + height - radius, radius, 0.0,
+              0.5 * PANEL_PI);
+    cairo_arc(cr, x + radius, y + height - radius, radius, 0.5 * PANEL_PI,
+              PANEL_PI);
+    cairo_arc(cr, x + radius, y + radius, radius, PANEL_PI, 1.5 * PANEL_PI);
+    cairo_close_path(cr);
+}
+
+/* A chain link, not a signal strength icon: the state describes the Home
+ * Assistant connection and must not be mistaken for the Wi-Fi indicator. */
+static gboolean status_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+    PanelUi *ui = user_data;
+    gdouble center_x = gtk_widget_get_allocated_width(widget) / 2.0;
+    gdouble center_y = gtk_widget_get_allocated_height(widget) / 2.0;
+    gboolean broken = ui->status_state == PANEL_STATUS_ERROR;
+    gdouble gap = broken ? 3.5 : 0.0;
+    guint color = PANEL_COLOR_ACCENT;
+
+    if (ui->status_state == PANEL_STATUS_CONNECTING)
+        color = PANEL_COLOR_WARNING;
+    else if (broken)
+        color = PANEL_COLOR_ALERT;
+
+    set_source_color(cr, color, 1.0);
+    cairo_set_line_width(cr, 2.4);
+    cairo_save(cr);
+    cairo_translate(cr, center_x, center_y);
+    cairo_rotate(cr, -0.25 * PANEL_PI);
+    rounded_rectangle(cr, -12.0 - gap, -5.0, 13.5, 10.0, 5.0);
+    cairo_stroke(cr);
+    rounded_rectangle(cr, -1.5 + gap, -5.0, 13.5, 10.0, 5.0);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+    return FALSE;
+}
+
+static gboolean battery_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+    static const gdouble bolt[][2] = {
+        {2.5, -7.0}, {-3.0, 0.5}, {0.0, 0.5},
+        {-2.5, 7.0}, {3.5, -0.5}, {0.5, -0.5}
+    };
+    PanelUi *ui = user_data;
+    gdouble width = gtk_widget_get_allocated_width(widget);
+    gdouble height = gtk_widget_get_allocated_height(widget);
+    gdouble center_x = width / 2.0;
+    gdouble body_top = 4.0;
+    gdouble body_height = height - body_top - 1.0;
+    gdouble body_width = width - 3.0;
+    gdouble body_left = center_x - body_width / 2.0;
+    gdouble track_top = body_top + 3.0;
+    gdouble track_height = body_height - 6.0;
+    guint color = PANEL_COLOR_ACCENT;
+
+    if (ui->battery_charging) {
+        color = PANEL_COLOR_CHARGING;
+    } else if (ui->battery_percent <= 15) {
+        color = PANEL_COLOR_ALERT;
+    } else if (ui->battery_percent <= 35) {
+        color = PANEL_COLOR_WARNING;
+    }
+
+    /* The outline follows the charge state as well, so the indicator differs
+     * even where the fill is short. */
+    set_source_color(cr, ui->battery_charging ? color : PANEL_COLOR_OUTLINE,
+                     1.0);
+    cairo_set_line_width(cr, 1.6);
+    rounded_rectangle(cr, body_left, body_top, body_width, body_height, 4.5);
+    cairo_stroke(cr);
+    rounded_rectangle(cr, center_x - 4.0, 0.8, 8.0, 3.4, 1.4);
+    cairo_fill(cr);
+
+    if (ui->battery_percent > 0) {
+        gdouble fill = MAX(track_height * ui->battery_percent / 100.0, 3.0);
+        set_source_color(cr, color, 1.0);
+        rounded_rectangle(cr, body_left + 3.0, track_top + track_height - fill,
+                          body_width - 6.0, fill, 2.0);
+        cairo_fill(cr);
+    }
+
+    if (ui->battery_charging) {
+        gdouble bolt_y = body_top + body_height / 2.0;
+
+        cairo_move_to(cr, center_x + bolt[0][0], bolt_y + bolt[0][1]);
+        for (guint i = 1; i < G_N_ELEMENTS(bolt); i++)
+            cairo_line_to(cr, center_x + bolt[i][0], bolt_y + bolt[i][1]);
+        cairo_close_path(cr);
+        set_source_color(cr, PANEL_COLOR_BOLT, 1.0);
+        cairo_fill_preserve(cr);
+        set_source_color(cr, PANEL_COLOR_HEADER, 1.0);
+        cairo_set_line_width(cr, 1.2);
+        cairo_stroke(cr);
+    }
+    return FALSE;
+}
+
+static GtkWidget *build_clock(PanelUi *ui)
+{
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_valign(box, GTK_ALIGN_CENTER);
+    ui->clock_time = new_label("--:--", "clock-time");
+    ui->clock_date = new_label("", "clock-date");
+    gtk_box_pack_start(GTK_BOX(box), ui->clock_time, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), ui->clock_date, FALSE, FALSE, 0);
+    return box;
+}
+
+static GtkWidget *build_status(PanelUi *ui)
+{
+    ui->status_state = PANEL_STATUS_CONNECTING;
+    ui->status = gtk_drawing_area_new();
+    gtk_widget_set_size_request(ui->status, 30, 30);
+    gtk_widget_set_valign(ui->status, GTK_ALIGN_CENTER);
+    gtk_widget_set_tooltip_text(ui->status, "Connecting");
+    g_signal_connect(ui->status, "draw", G_CALLBACK(status_draw), ui);
+    return ui->status;
+}
+
+static GtkWidget *build_battery(PanelUi *ui)
+{
+    ui->battery_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7);
+    gtk_widget_set_valign(ui->battery_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_no_show_all(ui->battery_box, TRUE);
+    ui->battery_icon = gtk_drawing_area_new();
+    gtk_widget_set_size_request(ui->battery_icon, 18, 30);
+    gtk_widget_set_valign(ui->battery_icon, GTK_ALIGN_CENTER);
+    g_signal_connect(ui->battery_icon, "draw", G_CALLBACK(battery_draw), ui);
+    ui->battery_level = new_label("--%", "battery-level");
+    gtk_box_pack_start(GTK_BOX(ui->battery_box), ui->battery_icon, FALSE, FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(ui->battery_box), ui->battery_level, FALSE,
+                       FALSE, 0);
+    /* The children are shown once here because the box itself opts out of the
+     * recursive show, which keeps its visibility driven by the battery state
+     * alone. */
+    gtk_widget_show(ui->battery_icon);
+    gtk_widget_show(ui->battery_level);
+    return ui->battery_box;
+}
+
 GtkWidget *panel_ui_build(PanelUi *ui)
 {
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -488,10 +666,17 @@ GtkWidget *panel_ui_build(PanelUi *ui)
 
     ui->page_title = new_label("NOW PLAYING", "header-title");
     gtk_widget_set_halign(ui->page_title, GTK_ALIGN_START);
-    gtk_widget_set_hexpand(ui->page_title, TRUE);
-    ui->status = new_label("Connecting", "status");
-    gtk_box_pack_start(GTK_BOX(header), ui->page_title, TRUE, TRUE, 18);
-    gtk_box_pack_start(GTK_BOX(header), ui->status, FALSE, FALSE, 18);
+    gtk_widget_set_valign(ui->page_title, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(header), ui->page_title, FALSE, FALSE, 18);
+    gtk_box_set_center_widget(GTK_BOX(header), build_clock(ui));
+    /* The battery indicator stays at the far right and the connection icon
+     * sits directly to its left. Grouping both keeps the right margin intact
+     * when the tablet reports no battery. */
+    GtkWidget *indicators = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_valign(indicators, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(indicators), build_status(ui), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(indicators), build_battery(ui), FALSE, FALSE, 0);
+    gtk_box_pack_end(GTK_BOX(header), indicators, FALSE, FALSE, 18);
 
     ui->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(ui->stack),
@@ -527,8 +712,9 @@ void panel_ui_install_styles(void)
         "window{background:#070c14;color:#edf4ff}"
         ".header{background:#0c1420;border-bottom:1px solid #1d2b3f;box-shadow:0 5px 18px rgba(0,0,0,.28)}"
         ".header-title{font-size:24px;font-weight:700;color:#f7faff}"
-        ".status{font-size:14px;font-weight:700;color:#56e5dc;background:#102b31;border:1px solid #1d5255;border-radius:18px;padding:7px 13px}"
-        ".status.error,.error{color:#ff8a94;background:#32171e;border-color:#68303b}"
+        ".clock-time{font-size:23px;font-weight:700;color:#f7faff}"
+        ".clock-date{font-size:12px;font-weight:600;color:#7f97b5}"
+        ".battery-level{font-size:15px;font-weight:700;color:#dceaff}"
         "button{background-image:linear-gradient(to bottom,#182438,#111a29);color:#e8f0fb;border:1px solid #2b3c55;border-radius:18px;box-shadow:0 5px 14px rgba(0,0,0,.24)}"
         "button:hover{background-image:linear-gradient(to bottom,#1d2c43,#152138);border-color:#3b526f}"
         "button:active{background:#20334d;box-shadow:none}"
@@ -575,8 +761,37 @@ void panel_ui_install_styles(void)
 
 void panel_ui_set_status(PanelUi *ui, const gchar *text, gboolean is_error)
 {
-    gtk_label_set_text(GTK_LABEL(ui->status), text);
-    toggle_css_class(ui->status, "error", is_error);
+    ui->status_state = is_error ? PANEL_STATUS_ERROR : PANEL_STATUS_CONNECTED;
+    /* The icon replaces the former status text, so the message is preserved
+     * as a tooltip for diagnostics. */
+    gtk_widget_set_tooltip_text(ui->status, text);
+    gtk_widget_queue_draw(ui->status);
+}
+
+void panel_ui_set_clock(PanelUi *ui, const gchar *time_text,
+                        const gchar *date_text)
+{
+    gtk_label_set_text(GTK_LABEL(ui->clock_time), time_text);
+    gtk_label_set_text(GTK_LABEL(ui->clock_date), date_text);
+}
+
+void panel_ui_set_battery(PanelUi *ui, gboolean available, gint percent,
+                          gboolean charging)
+{
+    if (!available) {
+        gtk_widget_hide(ui->battery_box);
+        return;
+    }
+
+    ui->battery_percent = CLAMP(percent, 0, 100);
+    ui->battery_charging = charging;
+
+    gchar *text = g_strdup_printf("%d%%", ui->battery_percent);
+    gtk_label_set_text(GTK_LABEL(ui->battery_level), text);
+    g_free(text);
+
+    gtk_widget_queue_draw(ui->battery_icon);
+    gtk_widget_show(ui->battery_box);
 }
 
 void panel_ui_set_player(PanelUi *ui, gboolean playing, const gchar *title,

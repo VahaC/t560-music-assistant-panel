@@ -4,6 +4,7 @@
 #include "home_assistant_client.h"
 #include "json_helpers.h"
 #include "panel_ui.h"
+#include "system_status.h"
 
 #include <json-glib/json-glib.h>
 
@@ -23,6 +24,9 @@ typedef struct {
     gchar *repeat_state;
     gchar *queue_data;
     guint poll_source;
+    guint clock_source;
+    guint battery_source;
+    gint64 clock_minute;
     guint poll_pending;
     gint64 next_playlist_poll_us;
     gint queue_selected;
@@ -571,6 +575,49 @@ static gboolean poll_states(gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
+/* The label is rewritten only when the displayed minute changes, so the
+ * one-second tick costs a single clock read on the tablet. */
+static gboolean update_clock(gpointer user_data)
+{
+    PanelApplication *application = user_data;
+    gint64 minute = g_get_real_time() / (G_USEC_PER_SEC * 60);
+
+    if (minute == application->clock_minute)
+        return G_SOURCE_CONTINUE;
+
+    application->clock_minute = minute;
+    GDateTime *now = g_date_time_new_now_local();
+    gchar *time_text = g_date_time_format(now, "%H:%M");
+    gchar *date_text = g_date_time_format(now, "%a, %d %b");
+    panel_ui_set_clock(application->ui, time_text, date_text);
+    g_free(time_text);
+    g_free(date_text);
+    g_date_time_unref(now);
+    return G_SOURCE_CONTINUE;
+}
+
+static gboolean update_battery(gpointer user_data)
+{
+    PanelApplication *application = user_data;
+    BatteryStatus status;
+
+    system_status_read_battery(&status);
+    panel_ui_set_battery(application->ui, status.available, status.percent,
+                         status.charging);
+    return G_SOURCE_CONTINUE;
+}
+
+static void start_header_updates(PanelApplication *application)
+{
+    application->clock_minute = -1;
+    update_clock(application);
+    update_battery(application);
+    application->clock_source = g_timeout_add_seconds(1, update_clock,
+                                                      application);
+    application->battery_source = g_timeout_add_seconds(10, update_battery,
+                                                        application);
+}
+
 static PanelApplication *panel_application_new(void)
 {
     PanelApplication *application = g_new0(PanelApplication, 1);
@@ -589,6 +636,10 @@ static void panel_application_free(PanelApplication *application)
 {
     if (application->poll_source != 0)
         g_source_remove(application->poll_source);
+    if (application->clock_source != 0)
+        g_source_remove(application->clock_source);
+    if (application->battery_source != 0)
+        g_source_remove(application->battery_source);
     home_assistant_client_free(application->client);
     panel_ui_free(application->ui);
     app_config_free(application->config);
@@ -619,7 +670,10 @@ static void activate(GtkApplication *gtk_application, gpointer user_data)
                            "t560-music-panel", "T560MusicPanel");
     G_GNUC_END_IGNORE_DEPRECATIONS
     gtk_window_set_default_size(GTK_WINDOW(application->window), 800, 1219);
-    gtk_window_maximize(GTK_WINDOW(application->window));
+    /* The panel owns the whole screen: no decorations and no window manager
+     * panels above it. */
+    gtk_window_set_decorated(GTK_WINDOW(application->window), FALSE);
+    gtk_window_fullscreen(GTK_WINDOW(application->window));
 
     gchar *failure = NULL;
     application->config = app_config_load(&failure);
@@ -633,6 +687,7 @@ static void activate(GtkApplication *gtk_application, gpointer user_data)
         application->ui = panel_ui_new(application->config, handle_ui_event,
                                        application);
         content = panel_ui_build(application->ui);
+        start_header_updates(application);
         poll_states(application);
         application->poll_source = g_timeout_add(
             application->config->poll_interval_ms, poll_states, application);
