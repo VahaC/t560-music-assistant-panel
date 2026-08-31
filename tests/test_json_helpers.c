@@ -41,6 +41,26 @@ static void test_string_arrays(void)
     json_array_unref(source);
 }
 
+static void test_large_string_array(void)
+{
+    JsonArray *source = json_array_new();
+    GPtrArray *copy = g_ptr_array_new_with_free_func(g_free);
+
+    for (guint i = 0; i < 500; i++) {
+        gchar *value = g_strdup_printf("Playlist %u", i);
+        json_array_add_string_element(source, value);
+        g_free(value);
+    }
+
+    json_copy_string_array(copy, source);
+    g_assert_cmpuint(copy->len, ==, 500);
+    g_assert_true(json_string_array_matches(copy, source));
+    g_assert_cmpstr(g_ptr_array_index(copy, 499), ==, "Playlist 499");
+
+    g_ptr_array_unref(copy);
+    json_array_unref(source);
+}
+
 static void test_builder_serialization(void)
 {
     JsonBuilder *builder = json_builder_new();
@@ -61,6 +81,7 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/json/scalar-accessors", test_scalar_accessors);
     g_test_add_func("/json/string-arrays", test_string_arrays);
+    g_test_add_func("/json/large-string-array", test_large_string_array);
     g_test_add_func("/json/builder-serialization", test_builder_serialization);
     return g_test_run();
 }

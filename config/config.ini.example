@@ -25,4 +25,5 @@ ac=AC
 [panel]
 # 1000 ms is responsive while keeping CPU/network use low.
 poll_interval_ms=1000
-
+# Playlist state can be much larger and changes infrequently.
+playlist_poll_interval_ms=60000

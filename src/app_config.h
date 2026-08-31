@@ -5,7 +5,8 @@
 
 enum {
     PANEL_ROOM_COUNT = 4,
-    PANEL_DEFAULT_POLL_MS = 1000
+    PANEL_DEFAULT_POLL_MS = 1000,
+    PANEL_DEFAULT_PLAYLIST_POLL_MS = 60000
 };
 
 typedef struct {
@@ -17,6 +18,7 @@ typedef struct {
     gchar *room_entities[PANEL_ROOM_COUNT];
     gchar *room_labels[PANEL_ROOM_COUNT];
     guint poll_interval_ms;
+    guint playlist_poll_interval_ms;
 } AppConfig;
 
 AppConfig *app_config_load(gchar **error_message);

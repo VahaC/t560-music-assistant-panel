@@ -72,6 +72,10 @@ static gboolean load_key_file(AppConfig *config, gchar **error_message)
     config->poll_interval_ms = (guint)CLAMP(
         read_integer(file, "panel", "poll_interval_ms", PANEL_DEFAULT_POLL_MS),
         500, 30000);
+    config->playlist_poll_interval_ms = (guint)CLAMP(
+        read_integer(file, "panel", "playlist_poll_interval_ms",
+                     PANEL_DEFAULT_PLAYLIST_POLL_MS),
+        10000, 3600000);
 
     g_key_file_unref(file);
     g_free(path);
@@ -117,6 +121,7 @@ AppConfig *app_config_load(gchar **error_message)
     *error_message = NULL;
     AppConfig *config = g_new0(AppConfig, 1);
     config->poll_interval_ms = PANEL_DEFAULT_POLL_MS;
+    config->playlist_poll_interval_ms = PANEL_DEFAULT_PLAYLIST_POLL_MS;
 
     if (!load_key_file(config, error_message) ||
         !load_token(config, error_message)) {
