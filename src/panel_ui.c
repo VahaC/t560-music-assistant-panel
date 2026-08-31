@@ -13,12 +13,15 @@ struct _PanelUi {
     GtkWidget *progress;
     GtkWidget *position;
     GtkWidget *play;
+    GtkWidget *play_icon;
     GtkWidget *shuffle;
     GtkWidget *repeat;
+    GtkWidget *repeat_label;
     GtkWidget *volume;
     GtkWidget *queue_list;
     GtkWidget *playlist_list;
     gboolean changing_list_selection;
+    GPtrArray *navigation_buttons;
     GtkWidget *room_buttons[PANEL_ROOM_COUNT];
     GtkWidget *room_states[PANEL_ROOM_COUNT];
 };
@@ -61,6 +64,45 @@ static GtkWidget *new_button(const gchar *text, const gchar *css_class,
     gtk_widget_set_size_request(button, width, height);
     if (css_class != NULL)
         add_css_class(button, css_class);
+    return button;
+}
+
+static GtkWidget *new_icon(const gchar *name, gint pixel_size)
+{
+    GtkWidget *icon = gtk_image_new_from_icon_name(name, GTK_ICON_SIZE_BUTTON);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), pixel_size);
+    return icon;
+}
+
+static GtkWidget *new_icon_button(const gchar *icon_name, const gchar *text,
+                                  const gchar *css_class, gint width,
+                                  gint height, gint icon_size,
+                                  GtkOrientation orientation,
+                                  GtkWidget **icon_out,
+                                  GtkWidget **label_out)
+{
+    GtkWidget *button = gtk_button_new();
+    GtkWidget *content = gtk_box_new(orientation, orientation ==
+                                                      GTK_ORIENTATION_HORIZONTAL
+                                                  ? 9
+                                                  : 3);
+    GtkWidget *icon = new_icon(icon_name, icon_size);
+    GtkWidget *label = text != NULL ? new_label(text, "button-label") : NULL;
+
+    gtk_widget_set_halign(content, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(content, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(content), icon, FALSE, FALSE, 0);
+    if (label != NULL)
+        gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(button), content);
+    gtk_widget_set_size_request(button, width, height);
+    add_css_class(button, "icon-button");
+    if (css_class != NULL)
+        add_css_class(button, css_class);
+    if (icon_out != NULL)
+        *icon_out = icon;
+    if (label_out != NULL)
+        *label_out = label;
     return button;
 }
 
@@ -195,13 +237,18 @@ static gchar *format_time(gdouble seconds)
     return g_strdup_printf("%d:%02d", total / 60, total % 60);
 }
 
-static GtkWidget *navigation_button(PanelUi *ui, const gchar *text,
-                                    const gchar *page, const gchar *title)
+static GtkWidget *navigation_button(PanelUi *ui, const gchar *icon,
+                                    const gchar *text, const gchar *page,
+                                    const gchar *title)
 {
-    GtkWidget *button = new_button(text, "nav-button", 150, 68);
+    GtkWidget *button = new_icon_button(
+        icon, text, "nav-button", 150, 72, 23, GTK_ORIENTATION_VERTICAL,
+        NULL, NULL);
     g_object_set_data(G_OBJECT(button), "page", (gpointer)page);
     g_object_set_data(G_OBJECT(button), "title", (gpointer)title);
     g_signal_connect(button, "clicked", G_CALLBACK(page_clicked), ui);
+    g_ptr_array_add(ui->navigation_buttons, button);
+    toggle_css_class(button, "active", g_str_equal(page, "player"));
     return button;
 }
 
@@ -209,77 +256,133 @@ static GtkWidget *navigation(PanelUi *ui)
 {
     GtkWidget *navigation_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_halign(navigation_box, GTK_ALIGN_CENTER);
+    add_css_class(navigation_box, "navigation-bar");
     gtk_box_pack_start(GTK_BOX(navigation_box),
-                       navigation_button(ui, "PLAYER", "player", "PLAYER"),
+                       navigation_button(ui, "audio-x-generic-symbolic",
+                                         "Player", "player", "NOW PLAYING"),
                        FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(navigation_box),
-                       navigation_button(ui, "QUEUE", "queue", "QUEUE"),
+                       navigation_button(ui, "view-list-details-symbolic",
+                                         "Queue", "queue", "QUEUE"),
                        FALSE, FALSE, 0);
     gtk_box_pack_start(
         GTK_BOX(navigation_box),
-        navigation_button(ui, "PLAYLISTS", "playlists", "PLAYLISTS"),
+        navigation_button(ui, "view-list-icons-symbolic", "Playlists",
+                          "playlists", "PLAYLISTS"),
         FALSE, FALSE, 0);
     gtk_box_pack_start(
         GTK_BOX(navigation_box),
-        navigation_button(ui, "ROOM", "room", "ROOM CONTROLS"),
+        navigation_button(ui, "computer-symbolic", "Room", "room",
+                          "ROOM CONTROLS"),
         FALSE, FALSE, 0);
     return navigation_box;
 }
 
 static GtkWidget *player_page(PanelUi *ui)
 {
-    GtkWidget *page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 9);
-    gtk_widget_set_margin_start(page, 18);
-    gtk_widget_set_margin_end(page, 18);
+    GtkWidget *page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 11);
+    gtk_widget_set_margin_start(page, 24);
+    gtk_widget_set_margin_end(page, 24);
+    gtk_widget_set_margin_top(page, 14);
+    gtk_widget_set_margin_bottom(page, 10);
+    add_css_class(page, "player-page");
 
     ui->album_art = gtk_image_new_from_icon_name(
-        "audio-x-generic", GTK_ICON_SIZE_DIALOG);
+        "audio-x-generic-symbolic", GTK_ICON_SIZE_DIALOG);
     gtk_widget_set_size_request(ui->album_art, 510, 510);
+    GtkWidget *artwork = gtk_frame_new(NULL);
+    gtk_frame_set_shadow_type(GTK_FRAME(artwork), GTK_SHADOW_NONE);
+    gtk_widget_set_halign(artwork, GTK_ALIGN_CENTER);
+    add_css_class(artwork, "artwork-card");
+    gtk_container_add(GTK_CONTAINER(artwork), ui->album_art);
+
+    GtkWidget *track_details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    add_css_class(track_details, "track-details");
     ui->track_title = new_label("Nothing playing", "track-title");
     ui->artist = new_label("", "artist");
-    ui->progress = gtk_progress_bar_new();
-    gtk_widget_set_size_request(ui->progress, -1, 20);
-    ui->position = new_label("0:00  /  0:00", "position");
-    gtk_box_pack_start(GTK_BOX(page), ui->album_art, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(page), ui->track_title, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(page), ui->artist, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(page), ui->progress, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(page), ui->position, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(track_details), ui->track_title,
+                       FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(track_details), ui->artist,
+                       FALSE, FALSE, 0);
 
-    GtkWidget *modes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    ui->shuffle = new_button("SHUFFLE", "mode-button", 180, 60);
-    ui->repeat = new_button("REPEAT OFF", "mode-button", 180, 60);
+    GtkWidget *timeline = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_start(timeline, 34);
+    gtk_widget_set_margin_end(timeline, 34);
+    ui->progress = gtk_progress_bar_new();
+    gtk_widget_set_size_request(ui->progress, -1, 12);
+    ui->position = new_label("0:00  /  0:00", "position");
+    gtk_box_pack_start(GTK_BOX(timeline), ui->progress, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(timeline), ui->position, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(page), artwork, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(page), track_details, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(page), timeline, FALSE, FALSE, 0);
+
+    GtkWidget *modes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_halign(modes, GTK_ALIGN_CENTER);
+    ui->shuffle = new_icon_button(
+        "media-playlist-shuffle-symbolic", "Shuffle", "mode-button",
+        190, 58, 23, GTK_ORIENTATION_HORIZONTAL, NULL, NULL);
+    ui->repeat = new_icon_button(
+        "media-playlist-repeat-symbolic", "Repeat off", "mode-button",
+        190, 58, 23, GTK_ORIENTATION_HORIZONTAL, NULL, &ui->repeat_label);
     g_signal_connect(ui->shuffle, "clicked", G_CALLBACK(shuffle_clicked), ui);
     g_signal_connect(ui->repeat, "clicked", G_CALLBACK(repeat_clicked), ui);
-    gtk_box_pack_start(GTK_BOX(modes), ui->shuffle, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(modes), ui->repeat, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(modes), ui->shuffle, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(modes), ui->repeat, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(page), modes, FALSE, FALSE, 0);
 
-    GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkWidget *previous = new_button("PREVIOUS", "control-button", 180, 86);
-    ui->play = new_button("PLAY", "play-button", 210, 96);
-    GtkWidget *next = new_button("NEXT", "control-button", 180, 86);
+    GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
+    gtk_widget_set_halign(controls, GTK_ALIGN_CENTER);
+    GtkWidget *previous = new_icon_button(
+        "media-skip-backward-symbolic", NULL, "transport-button",
+        108, 86, 38, GTK_ORIENTATION_VERTICAL, NULL, NULL);
+    ui->play = new_icon_button(
+        "media-playback-start-symbolic", NULL, "play-button", 120, 104,
+        48, GTK_ORIENTATION_VERTICAL, &ui->play_icon, NULL);
+    GtkWidget *next = new_icon_button(
+        "media-skip-forward-symbolic", NULL, "transport-button",
+        108, 86, 38, GTK_ORIENTATION_VERTICAL, NULL, NULL);
+    gtk_widget_set_tooltip_text(previous, "Previous track");
+    gtk_widget_set_tooltip_text(ui->play, "Play or pause");
+    gtk_widget_set_tooltip_text(next, "Next track");
     g_object_set_data(G_OBJECT(previous), "service", "media_previous_track");
     g_object_set_data(G_OBJECT(ui->play), "service", "media_play_pause");
     g_object_set_data(G_OBJECT(next), "service", "media_next_track");
     g_signal_connect(previous, "clicked", G_CALLBACK(player_clicked), ui);
     g_signal_connect(ui->play, "clicked", G_CALLBACK(player_clicked), ui);
     g_signal_connect(next, "clicked", G_CALLBACK(player_clicked), ui);
-    gtk_box_pack_start(GTK_BOX(controls), previous, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(controls), ui->play, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(controls), next, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(controls), previous, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls), ui->play, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls), next, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(page), controls, FALSE, FALSE, 0);
 
     GtkWidget *volume_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkWidget *down = new_button("VOL -", "control-button", 180, 68);
-    ui->volume = new_label("VOLUME --", "volume");
-    GtkWidget *up = new_button("VOL +", "control-button", 180, 68);
+    gtk_widget_set_halign(volume_controls, GTK_ALIGN_CENTER);
+    add_css_class(volume_controls, "volume-card");
+    GtkWidget *down = new_icon_button(
+        "audio-volume-low-symbolic", NULL, "volume-button", 86, 62, 28,
+        GTK_ORIENTATION_VERTICAL, NULL, NULL);
+    GtkWidget *volume_readout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(volume_readout, 180, -1);
+    gtk_box_pack_start(GTK_BOX(volume_readout),
+                       new_label("VOLUME", "volume-caption"),
+                       FALSE, FALSE, 0);
+    ui->volume = new_label("--", "volume");
+    gtk_box_pack_start(GTK_BOX(volume_readout), ui->volume,
+                       FALSE, FALSE, 0);
+    GtkWidget *up = new_icon_button(
+        "audio-volume-high-symbolic", NULL, "volume-button", 86, 62, 28,
+        GTK_ORIENTATION_VERTICAL, NULL, NULL);
+    gtk_widget_set_tooltip_text(down, "Volume down");
+    gtk_widget_set_tooltip_text(up, "Volume up");
     g_object_set_data(G_OBJECT(down), "service", "volume_down");
     g_object_set_data(G_OBJECT(up), "service", "volume_up");
     g_signal_connect(down, "clicked", G_CALLBACK(player_clicked), ui);
     g_signal_connect(up, "clicked", G_CALLBACK(player_clicked), ui);
     gtk_box_pack_start(GTK_BOX(volume_controls), down, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(volume_controls), ui->volume, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(volume_controls), volume_readout,
+                       FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(volume_controls), up, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(page), volume_controls, FALSE, FALSE, 0);
     gtk_box_pack_end(GTK_BOX(page), navigation(ui), FALSE, FALSE, 4);
@@ -366,11 +469,13 @@ PanelUi *panel_ui_new(const AppConfig *config, PanelUiEventHandler handler,
     ui->config = config;
     ui->event_handler = handler;
     ui->event_user_data = user_data;
+    ui->navigation_buttons = g_ptr_array_new();
     return ui;
 }
 
 void panel_ui_free(PanelUi *ui)
 {
+    g_ptr_array_unref(ui->navigation_buttons);
     g_free(ui);
 }
 
@@ -379,9 +484,9 @@ GtkWidget *panel_ui_build(PanelUi *ui)
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     add_css_class(header, "header");
-    gtk_widget_set_size_request(header, -1, 62);
+    gtk_widget_set_size_request(header, -1, 70);
 
-    ui->page_title = new_label("PLAYER", "header-title");
+    ui->page_title = new_label("NOW PLAYING", "header-title");
     gtk_widget_set_halign(ui->page_title, GTK_ALIGN_START);
     gtk_widget_set_hexpand(ui->page_title, TRUE);
     ui->status = new_label("Connecting", "status");
@@ -418,19 +523,48 @@ GtkWidget *panel_ui_build_config_error(const gchar *message)
 void panel_ui_install_styles(void)
 {
     static const gchar css[] =
-        "*{font-family:Sans}window{background:#090b11;color:#f5f7ff}"
-        ".header{background:#101521;border-bottom:1px solid #263248}"
-        ".header-title{font-size:25px;font-weight:bold}.status{font-size:16px;color:#00cfff}.error{color:#ff6b72}"
-        "button{background:#141927;color:#f4f4ff;border:2px solid #334466;border-radius:14px;box-shadow:none}"
-        "button:active{background:#24344e}button.active{background:#123d45;border-color:#00cfff;color:#7deaff}"
-        ".track-title{font-size:31px;font-weight:bold}.artist{font-size:23px;color:#6ca8df}.position{font-size:17px;color:#7f8ca5}"
-        "progressbar trough{min-height:14px;background:#1a1a35;border-radius:8px}progressbar progress{min-height:14px;background:#00cfff;border-radius:8px}"
-        ".control-button,.mode-button{font-size:18px;font-weight:bold}.play-button{font-size:24px;font-weight:bold;border-color:#00cfff}"
-        ".volume{font-size:20px;font-weight:bold;color:#78a7d6}.nav-button{font-size:16px;font-weight:bold}"
-        ".list-view{font-size:20px;background:#090b11;color:#f4f4ff}.list-view:selected{background:#123d45;color:#7deaff}.play-selected{font-size:22px;font-weight:bold;border-color:#00cfff}"
-        ".room-help{font-size:18px;color:#77779a}.room-card{background:#121521;border:2px solid #2a3044;border-radius:22px}"
-        ".room-card.active{background:#163d3d;border-color:#00cfff}.room-name{font-size:29px;font-weight:bold}.room-state{font-size:22px;color:#7d89a4}"
-        ".setup-title{font-size:38px;font-weight:bold;color:#00cfff}.config-error{font-size:21px}";
+        "*{font-family:Sans;color:#edf4ff}"
+        "window{background:#070c14;color:#edf4ff}"
+        ".header{background:#0c1420;border-bottom:1px solid #1d2b3f;box-shadow:0 5px 18px rgba(0,0,0,.28)}"
+        ".header-title{font-size:24px;font-weight:700;color:#f7faff}"
+        ".status{font-size:14px;font-weight:700;color:#56e5dc;background:#102b31;border:1px solid #1d5255;border-radius:18px;padding:7px 13px}"
+        ".status.error,.error{color:#ff8a94;background:#32171e;border-color:#68303b}"
+        "button{background-image:linear-gradient(to bottom,#182438,#111a29);color:#e8f0fb;border:1px solid #2b3c55;border-radius:18px;box-shadow:0 5px 14px rgba(0,0,0,.24)}"
+        "button:hover{background-image:linear-gradient(to bottom,#1d2c43,#152138);border-color:#3b526f}"
+        "button:active{background:#20334d;box-shadow:none}"
+        "button.active{background:#12373c;border-color:#43d8d0;color:#75f1e9;box-shadow:0 0 0 1px rgba(67,216,208,.18)}"
+        ".icon-button image{-gtk-icon-shadow:none}"
+        ".player-page{background-image:linear-gradient(to bottom,#0a111c,#070c14)}"
+        ".artwork-card{background:#101a29;border:1px solid #25364e;border-radius:28px;padding:10px;box-shadow:0 14px 34px rgba(0,0,0,.42)}"
+        ".track-details{padding:2px 12px}"
+        ".track-title{font-size:30px;font-weight:700;color:#f8fbff}"
+        ".artist{font-size:20px;color:#8fa9c7}"
+        ".position{font-size:14px;font-weight:600;color:#778ba5}"
+        "progressbar trough{min-height:8px;background:#172235;border-radius:6px}"
+        "progressbar progress{min-height:8px;background-image:linear-gradient(to right,#31c8da,#55e4c5);border-radius:6px;box-shadow:0 0 8px rgba(49,200,218,.35)}"
+        ".mode-button{font-size:16px;font-weight:700;border-radius:20px;box-shadow:none}"
+        ".transport-button{background:#121d2d;border-color:#2a3c55;border-radius:28px;box-shadow:0 7px 18px rgba(0,0,0,.28)}"
+        ".play-button{background-image:linear-gradient(to bottom,#5ce4d7,#2fc8d6);color:#061418;border:0;border-radius:36px;box-shadow:0 10px 28px rgba(47,200,214,.32)}"
+        ".play-button:hover{background-image:linear-gradient(to bottom,#72eee3,#43d7e2)}"
+        ".play-button:active{background:#27b3c1;box-shadow:0 4px 10px rgba(47,200,214,.24)}"
+        ".volume-card{background:#0e1826;border:1px solid #22334a;border-radius:25px;padding:6px 12px}"
+        ".volume-button{background:transparent;border:0;box-shadow:none;color:#91aac8}"
+        ".volume-button:active{background:#192b41;color:#56e5dc}"
+        ".volume-caption{font-size:11px;font-weight:700;color:#647a96}"
+        ".volume{font-size:22px;font-weight:700;color:#dceaff}"
+        ".navigation-bar{background:#0d1623;border:1px solid #1e2d42;border-radius:25px;padding:5px;box-shadow:0 8px 22px rgba(0,0,0,.3)}"
+        ".nav-button{font-size:13px;font-weight:700;background:transparent;border:0;border-radius:19px;box-shadow:none;color:#7188a5}"
+        ".nav-button.active{background:#152e3a;border:0;color:#5ee1d8;box-shadow:none}"
+        ".list-view{font-size:20px;background:#070c14;color:#edf4ff}"
+        ".list-view:selected{background:#12373c;color:#75f1e9}"
+        ".play-selected{font-size:20px;font-weight:700;border-color:#43d8d0}"
+        ".room-help{font-size:18px;color:#778ba5}"
+        ".room-card{background:#101a29;border:1px solid #2a3b54;border-radius:24px;box-shadow:0 8px 22px rgba(0,0,0,.28)}"
+        ".room-card.active{background:#12373c;border-color:#43d8d0}"
+        ".room-name{font-size:28px;font-weight:700}"
+        ".room-state{font-size:21px;color:#8fa9c7}"
+        ".setup-title{font-size:38px;font-weight:700;color:#56e5dc}"
+        ".config-error{font-size:21px}";
     GtkCssProvider *provider = gtk_css_provider_new();
     gtk_css_provider_load_from_data(provider, css, -1, NULL);
     gtk_style_context_add_provider_for_screen(
@@ -450,7 +584,12 @@ void panel_ui_set_player(PanelUi *ui, gboolean playing, const gchar *title,
                          gdouble duration, gdouble volume, gboolean shuffle,
                          const gchar *repeat)
 {
-    gtk_button_set_label(GTK_BUTTON(ui->play), playing ? "PAUSE" : "PLAY");
+    gtk_image_set_from_icon_name(
+        GTK_IMAGE(ui->play_icon),
+        playing ? "media-playback-pause-symbolic"
+                : "media-playback-start-symbolic",
+        GTK_ICON_SIZE_BUTTON);
+    gtk_image_set_pixel_size(GTK_IMAGE(ui->play_icon), 48);
     gtk_label_set_text(GTK_LABEL(ui->track_title), title);
     gtk_label_set_text(GTK_LABEL(ui->artist), artist);
     gtk_progress_bar_set_fraction(
@@ -465,7 +604,7 @@ void panel_ui_set_player(PanelUi *ui, gboolean playing, const gchar *title,
     g_free(duration_text);
     g_free(timeline);
 
-    gchar *volume_text = g_strdup_printf("VOLUME  %.0f%%", volume * 100.0);
+    gchar *volume_text = g_strdup_printf("%.0f%%", volume * 100.0);
     gtk_label_set_text(GTK_LABEL(ui->volume), volume_text);
     g_free(volume_text);
 
@@ -475,11 +614,12 @@ void panel_ui_set_player(PanelUi *ui, gboolean playing, const gchar *title,
 void panel_ui_set_modes(PanelUi *ui, gboolean shuffle, const gchar *repeat)
 {
     toggle_css_class(ui->shuffle, "active", shuffle);
-    gchar *upper_repeat = g_ascii_strup(repeat, -1);
-    gchar *repeat_text = g_strdup_printf("REPEAT %s", upper_repeat);
-    gtk_button_set_label(GTK_BUTTON(ui->repeat), repeat_text);
+    const gchar *repeat_state = g_str_equal(repeat, "all") ? "all"
+                                : g_str_equal(repeat, "one") ? "one"
+                                                               : "off";
+    gchar *repeat_text = g_strdup_printf("Repeat %s", repeat_state);
+    gtk_label_set_text(GTK_LABEL(ui->repeat_label), repeat_text);
     toggle_css_class(ui->repeat, "active", !g_str_equal(repeat, "off"));
-    g_free(upper_repeat);
     g_free(repeat_text);
 }
 
@@ -554,4 +694,10 @@ void panel_ui_show_page(PanelUi *ui, const gchar *page, const gchar *title)
 {
     gtk_stack_set_visible_child_name(GTK_STACK(ui->stack), page);
     gtk_label_set_text(GTK_LABEL(ui->page_title), title);
+    for (guint i = 0; i < ui->navigation_buttons->len; i++) {
+        GtkWidget *button = g_ptr_array_index(ui->navigation_buttons, i);
+        const gchar *button_page = g_object_get_data(
+            G_OBJECT(button), "page");
+        toggle_css_class(button, "active", g_str_equal(button_page, page));
+    }
 }

@@ -154,7 +154,7 @@ static void play_selected_playlist(PanelApplication *application)
     call_service(application, "music_assistant", "play_media", json);
     g_free(json);
     g_object_unref(builder);
-    panel_ui_show_page(application->ui, "player", "PLAYER");
+    panel_ui_show_page(application->ui, "player", "NOW PLAYING");
 }
 
 static void handle_ui_event(PanelUiEvent event, const gchar *value, gint index,
