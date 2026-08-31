@@ -5,8 +5,8 @@ export LANGUAGE=en_US:en
 export LC_ALL=en_US.UTF-8
 export GTK_THEME=Adwaita:dark
 
-# Keep the panel awake. The existing physical Power handler still controls the
-# backlight on short press and the power menu on long press.
+# Disable automatic timeouts. The Power handler controls DPMS explicitly and
+# allows any key or touchscreen input to wake the display.
 xset s off
 xset s noblank
 xset -dpms
@@ -18,7 +18,7 @@ python3 "$HOME/.local/bin/t560-cursor.py" >>"$HOME/.local/state/cursor.log" 2>&1
 tint2 -c "$HOME/.config/tint2/desktop-tint2rc" >>"$HOME/.local/state/desktop.log" 2>&1 &
 tint2 -c "$HOME/.config/tint2/tint2rc" >>"$HOME/.local/state/tint2.log" 2>&1 &
 
-# Preserve the existing short/long physical Power-button behavior.
+# Turn off the display on a short Power press and retain the long-press menu.
 python3 "$HOME/.local/bin/t560-power-button.py" >>"$HOME/.local/state/power-button.log" 2>&1 &
 
 # Native panel watchdog replaces t560-badwolf-watchdog.

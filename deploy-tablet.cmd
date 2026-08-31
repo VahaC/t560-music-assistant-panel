@@ -30,6 +30,7 @@ for %%F in (
     "scripts\t560-panel-watchdog"
     "scripts\t560-open-panel"
     "scripts\t560-restart-panel"
+    "scripts\t560-power-button.py"
 ) do (
     if not exist "%%~F" (
         echo ERROR: Missing local file: %%~F
@@ -49,26 +50,31 @@ call :send_file "scripts\t560-open-panel" "%REMOTE_BIN%/t560-open-panel.new"
 if errorlevel 1 goto :failure
 call :send_file "scripts\t560-restart-panel" "%REMOTE_BIN%/t560-restart-panel.new"
 if errorlevel 1 goto :failure
+call :send_file "scripts\t560-power-button.py" "%REMOTE_BIN%/t560-power-button.py.new"
+if errorlevel 1 goto :failure
 
 echo Validating runtime dependencies...
-ssh.exe "%TABLET_TARGET%" "set -eu; chmod 755 '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-restart-panel.new'; ldd '%REMOTE_BIN%/t560-panel.new' > '%REMOTE_STATE%/t560-deploy-ldd.log' 2>&1; cat '%REMOTE_STATE%/t560-deploy-ldd.log'; if grep -q 'not found' '%REMOTE_STATE%/t560-deploy-ldd.log'; then echo 'ERROR: A runtime dependency is missing.' >&2; exit 1; fi"
+ssh.exe "%TABLET_TARGET%" "set -eu; chmod 755 '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-power-button.py.new'; python3 -m py_compile '%REMOTE_BIN%/t560-power-button.py.new'; ldd '%REMOTE_BIN%/t560-panel.new' > '%REMOTE_STATE%/t560-deploy-ldd.log' 2>&1; cat '%REMOTE_STATE%/t560-deploy-ldd.log'; if grep -q 'not found' '%REMOTE_STATE%/t560-deploy-ldd.log'; then echo 'ERROR: A runtime dependency is missing.' >&2; exit 1; fi"
 if errorlevel 1 goto :failure
 
 echo Activating the update and restarting the panel...
 ssh.exe "%TABLET_TARGET%" "pkill -f '[t]560-panel-watchdog'" >nul 2>&1
 ssh.exe "%TABLET_TARGET%" "pkill -x t560-panel" >nul 2>&1
+ssh.exe "%TABLET_TARGET%" "pkill -f '[t]560-power-button.py'" >nul 2>&1
 
-ssh.exe "%TABLET_TARGET%" "cp '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel.previous'; cp '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-panel-watchdog.previous'; cp '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-open-panel.previous'; cp '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-restart-panel.previous'"
+ssh.exe "%TABLET_TARGET%" "cp '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel.previous'; cp '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-panel-watchdog.previous'; cp '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-open-panel.previous'; cp '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-restart-panel.previous'; cp '%REMOTE_BIN%/t560-power-button.py' '%REMOTE_BIN%/t560-power-button.py.previous'"
 if errorlevel 1 goto :failure
 
-ssh.exe "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-restart-panel'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel'"
+ssh.exe "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-power-button.py'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py'"
 if errorlevel 1 goto :rollback
 
 ssh.exe "%TABLET_TARGET%" "'%REMOTE_BIN%/t560-restart-panel'"
 if errorlevel 1 goto :rollback
+ssh.exe "%TABLET_TARGET%" "nohup python3 '%REMOTE_BIN%/t560-power-button.py' >>'%REMOTE_STATE%/power-button.log' 2>&1 </dev/null &"
+if errorlevel 1 goto :rollback
 
 powershell.exe -NoProfile -Command "Start-Sleep -Seconds 4"
-ssh.exe "%TABLET_TARGET%" "pgrep -x t560-panel; pgrep -f '[t]560-panel-watchdog'; tail -n 20 '%REMOTE_STATE%/t560-music-panel.log'"
+ssh.exe "%TABLET_TARGET%" "pgrep -x t560-panel; pgrep -f '[t]560-panel-watchdog'; pgrep -f '[t]560-power-button.py'; tail -n 20 '%REMOTE_STATE%/t560-music-panel.log'; tail -n 5 '%REMOTE_STATE%/power-button.log'"
 if errorlevel 1 goto :rollback
 
 for /f "tokens=1" %%H in ('ssh.exe "%TABLET_TARGET%" "sha256sum %REMOTE_BIN%/t560-panel"') do set "REMOTE_SHA256=%%H"
@@ -84,8 +90,10 @@ exit /b 0
 echo ERROR: The updated panel did not pass the runtime check. Restoring the previous version.
 ssh.exe "%TABLET_TARGET%" "pkill -f '[t]560-panel-watchdog'" >nul 2>&1
 ssh.exe "%TABLET_TARGET%" "pkill -x t560-panel" >nul 2>&1
-ssh.exe "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.previous' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.previous' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.previous' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.previous' '%REMOTE_BIN%/t560-restart-panel'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel'"
+ssh.exe "%TABLET_TARGET%" "pkill -f '[t]560-power-button.py'" >nul 2>&1
+ssh.exe "%TABLET_TARGET%" "mv '%REMOTE_BIN%/t560-panel.previous' '%REMOTE_BIN%/t560-panel'; mv '%REMOTE_BIN%/t560-panel-watchdog.previous' '%REMOTE_BIN%/t560-panel-watchdog'; mv '%REMOTE_BIN%/t560-open-panel.previous' '%REMOTE_BIN%/t560-open-panel'; mv '%REMOTE_BIN%/t560-restart-panel.previous' '%REMOTE_BIN%/t560-restart-panel'; mv '%REMOTE_BIN%/t560-power-button.py.previous' '%REMOTE_BIN%/t560-power-button.py'; chmod 755 '%REMOTE_BIN%/t560-panel' '%REMOTE_BIN%/t560-panel-watchdog' '%REMOTE_BIN%/t560-open-panel' '%REMOTE_BIN%/t560-restart-panel' '%REMOTE_BIN%/t560-power-button.py'"
 ssh.exe "%TABLET_TARGET%" "'%REMOTE_BIN%/t560-restart-panel'"
+ssh.exe "%TABLET_TARGET%" "nohup python3 '%REMOTE_BIN%/t560-power-button.py' >>'%REMOTE_STATE%/power-button.log' 2>&1 </dev/null &"
 goto :failure
 
 :send_file

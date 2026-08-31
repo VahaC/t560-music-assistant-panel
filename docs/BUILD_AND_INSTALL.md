@@ -38,6 +38,7 @@ Installed files:
 /home/vahac/.local/bin/t560-panel-watchdog
 /home/vahac/.local/bin/t560-open-panel
 /home/vahac/.local/bin/t560-restart-panel
+/home/vahac/.local/bin/t560-power-button.py
 /home/vahac/.config/t560-music-panel/config.ini
 /home/vahac/.config/t560-music-panel/token
 /home/vahac/.local/share/applications/t560-home-assistant.desktop
@@ -135,6 +136,7 @@ Send-T560File .\t560-panel /home/vahac/.local/bin/t560-panel
 Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-watchdog
 Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel
 Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel
+Send-T560File .\scripts\t560-power-button.py /home/vahac/.local/bin/t560-power-button.py
 Send-T560File .\config\config.ini.example /home/vahac/.config/t560-music-panel/config.ini.example
 Send-T560File .\openbox\t560-openbox-autostart /home/vahac/.config/openbox/autostart.t560-new
 Send-T560File .\data\t560-home-assistant.desktop /home/vahac/.local/share/applications/t560-home-assistant.desktop.new
@@ -144,7 +146,7 @@ Create the initial configuration without overwriting an existing one, and set
 permissions:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560-panel-watchdog ~/.local/bin/t560-open-panel ~/.local/bin/t560-restart-panel ~/.config/openbox/autostart.t560-new; chmod 700 ~/.config/t560-music-panel; if test ! -f ~/.config/t560-music-panel/config.ini; then cp ~/.config/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini; fi; chmod 600 ~/.config/t560-music-panel/config.ini; mv ~/.local/share/applications/t560-home-assistant.desktop.new ~/.local/share/applications/t560-home-assistant.desktop; chmod 644 ~/.local/share/applications/t560-home-assistant.desktop; ls -l ~/.local/bin/t560-*'
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560-panel-watchdog ~/.local/bin/t560-open-panel ~/.local/bin/t560-restart-panel ~/.local/bin/t560-power-button.py ~/.config/openbox/autostart.t560-new; chmod 700 ~/.config/t560-music-panel; if test ! -f ~/.config/t560-music-panel/config.ini; then cp ~/.config/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini; fi; chmod 600 ~/.config/t560-music-panel/config.ini; mv ~/.local/share/applications/t560-home-assistant.desktop.new ~/.local/share/applications/t560-home-assistant.desktop; chmod 644 ~/.local/share/applications/t560-home-assistant.desktop; ls -l ~/.local/bin/t560-*'
 ```
 
 ## 4. Verify runtime libraries
@@ -256,14 +258,17 @@ Verify on the touchscreen:
 5. Queue and playlist selection work.
 6. Configured room controls work.
 7. Matchbox Keyboard does not open.
-8. The physical Home and Power buttons retain their existing behavior.
+8. A short Power press turns the display off.
+9. Any physical key or touchscreen input wakes the display.
+10. A long Power press opens the existing power menu.
+11. The physical Home button retains its existing behavior.
 
 Do not enable autostart until this test passes.
 
 ## 9. Enable the provided Openbox autostart
 
-The provided autostart keeps Tint2, the cursor helper, and the existing Power
-button handler. It starts neither Badwolf nor Matchbox Keyboard.
+The provided autostart keeps Tint2 and the cursor helper and starts the included
+Power button handler. It starts neither Badwolf nor Matchbox Keyboard.
 
 Back up the current Openbox autostart only once:
 
@@ -283,8 +288,8 @@ mv "$HOME/.config/openbox/autostart.t560-new" \
 chmod 755 "$HOME/.config/openbox/autostart"
 ```
 
-The Openbox `rc.xml` file is not replaced, so the existing Home and Power button
-mappings remain intact.
+The Openbox `rc.xml` file is not replaced, so the existing Home button mapping
+and long-press Power menu remain intact.
 
 The existing Tint2 configurations already reference
 `~/.local/share/applications/t560-home-assistant.desktop`. The installed desktop
@@ -343,6 +348,7 @@ Send-T560File .\t560-panel /home/vahac/.local/bin/t560-panel.new
 Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-watchdog.new
 Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel.new
 Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel.new
+Send-T560File .\scripts\t560-power-button.py /home/vahac/.local/bin/t560-power-button.py.new
 ```
 
 Do not transfer `config.ini` or `token` during an update.
@@ -352,7 +358,7 @@ Do not transfer `config.ini` or `token` during an update.
 Run:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel.new ~/.local/bin/t560-panel-watchdog.new ~/.local/bin/t560-open-panel.new ~/.local/bin/t560-restart-panel.new; ldd ~/.local/bin/t560-panel.new 2>&1'
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel.new ~/.local/bin/t560-panel-watchdog.new ~/.local/bin/t560-open-panel.new ~/.local/bin/t560-restart-panel.new ~/.local/bin/t560-power-button.py.new; python3 -m py_compile ~/.local/bin/t560-power-button.py.new; ldd ~/.local/bin/t560-panel.new 2>&1'
 ```
 
 Stop if any dependency is reported as `not found`.
@@ -370,6 +376,7 @@ Stop the watchdog and application:
 ```sh
 pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
 pkill -x t560-panel 2>/dev/null || true
+pkill -f '[t]560-power-button.py' 2>/dev/null || true
 ```
 
 Keep one rollback copy and activate the new files:
@@ -383,6 +390,8 @@ cp "$HOME/.local/bin/t560-open-panel" \
    "$HOME/.local/bin/t560-open-panel.previous"
 cp "$HOME/.local/bin/t560-restart-panel" \
    "$HOME/.local/bin/t560-restart-panel.previous"
+cp "$HOME/.local/bin/t560-power-button.py" \
+   "$HOME/.local/bin/t560-power-button.py.previous"
 
 mv "$HOME/.local/bin/t560-panel.new" \
    "$HOME/.local/bin/t560-panel"
@@ -392,11 +401,14 @@ mv "$HOME/.local/bin/t560-open-panel.new" \
    "$HOME/.local/bin/t560-open-panel"
 mv "$HOME/.local/bin/t560-restart-panel.new" \
    "$HOME/.local/bin/t560-restart-panel"
+mv "$HOME/.local/bin/t560-power-button.py.new" \
+   "$HOME/.local/bin/t560-power-button.py"
 
 chmod 755 "$HOME/.local/bin/t560-panel" \
           "$HOME/.local/bin/t560-panel-watchdog" \
           "$HOME/.local/bin/t560-open-panel" \
-          "$HOME/.local/bin/t560-restart-panel"
+          "$HOME/.local/bin/t560-restart-panel" \
+          "$HOME/.local/bin/t560-power-button.py"
 ```
 
 ## 6. Restart and verify
@@ -405,14 +417,19 @@ chmod 755 "$HOME/.local/bin/t560-panel" \
 : >"$HOME/.local/state/t560-music-panel.log"
 nohup "$HOME/.local/bin/t560-panel-watchdog" \
   >/dev/null 2>&1 </dev/null &
+nohup python3 "$HOME/.local/bin/t560-power-button.py" \
+  >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
 
 sleep 3
 ps | grep '[t]560-panel'
+ps | grep '[t]560-power-button.py'
 tail -n 100 "$HOME/.local/state/t560-music-panel.log"
+tail -n 20 "$HOME/.local/state/power-button.log"
 ```
 
 Verify the main player page and at least one Home Assistant action on the
-touchscreen.
+touchscreen. Then press Power briefly, confirm that the display turns off, and
+confirm that both a physical key and a touchscreen tap wake it.
 
 ## 7. Roll back a failed update
 
@@ -421,6 +438,7 @@ If the new version fails:
 ```sh
 pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
 pkill -x t560-panel 2>/dev/null || true
+pkill -f '[t]560-power-button.py' 2>/dev/null || true
 
 mv "$HOME/.local/bin/t560-panel.previous" \
    "$HOME/.local/bin/t560-panel"
@@ -430,14 +448,19 @@ mv "$HOME/.local/bin/t560-open-panel.previous" \
    "$HOME/.local/bin/t560-open-panel"
 mv "$HOME/.local/bin/t560-restart-panel.previous" \
    "$HOME/.local/bin/t560-restart-panel"
+mv "$HOME/.local/bin/t560-power-button.py.previous" \
+   "$HOME/.local/bin/t560-power-button.py"
 
 chmod 755 "$HOME/.local/bin/t560-panel" \
           "$HOME/.local/bin/t560-panel-watchdog" \
           "$HOME/.local/bin/t560-open-panel" \
-          "$HOME/.local/bin/t560-restart-panel"
+          "$HOME/.local/bin/t560-restart-panel" \
+          "$HOME/.local/bin/t560-power-button.py"
 
 nohup "$HOME/.local/bin/t560-panel-watchdog" \
   >/dev/null 2>&1 </dev/null &
+nohup python3 "$HOME/.local/bin/t560-power-button.py" \
+  >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
 ```
 
 # Change configuration later

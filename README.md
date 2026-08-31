@@ -21,7 +21,8 @@ or an on-screen keyboard. All settings are edited over SSH.
 - Direct Home Assistant REST API access without loading Lovelace.
 - A separate token file with `0600` permissions.
 - Watchdog, desktop entry, Openbox rule, and ARMv7 `APKBUILD`.
-- No interception of the existing physical Home or Power button handlers.
+- A short Power press turns the display off; any key or touchscreen input wakes it.
+- The existing long-press Power menu and physical Home button behavior are retained.
 
 ## Tablet configuration files
 
@@ -76,9 +77,11 @@ existing SSH connection without requiring SCP, SFTP, or administrative access.
 ## Openbox autostart
 
 The ready-to-use [t560-openbox-autostart](openbox/t560-openbox-autostart)
-preserves Tint2, the cursor helper, and the existing Power button handler. It
-does not start Badwolf, WebKit, or Matchbox Keyboard. Back up the current
-autostart file before replacing it.
+starts Tint2, the cursor helper, and the included Power button handler. A short
+Power press turns the display off, while any key or touchscreen input wakes it.
+The handler retains the existing long-press Power menu. The autostart does not
+start Badwolf, WebKit, or Matchbox Keyboard. Back up the current autostart file
+before replacing it.
 
 The first-installation procedure transfers the provided file as a candidate,
 backs up the current Openbox autostart, tests the panel, and activates the new
