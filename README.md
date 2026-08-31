@@ -40,6 +40,21 @@ The Media Controller integration from the ESP32 controller repository must be
 installed and configured in Home Assistant first. It creates the queue and
 playlist sensors and the room proxy entities consumed by this application.
 
+## Source architecture
+
+The application is split into focused C modules with explicit interfaces:
+
+- `application` owns the application lifecycle and coordinates UI events with
+  Home Assistant state;
+- `app_config` validates and owns configuration data;
+- `home_assistant_client` encapsulates authenticated asynchronous HTTP I/O;
+- `panel_ui` builds and updates GTK widgets without knowing API details;
+- `json_helpers` contains reusable, unit-tested JSON accessors;
+- `main` is the minimal process entry point.
+
+The Makefile tracks header dependencies automatically. Run `make test` for the
+unit tests and `make` for the application.
+
 ## Build and installation
 
 The complete guide contains two end-to-end procedures:

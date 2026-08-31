@@ -3,3 +3,8 @@ build/
 *.apk
 *.tar.gz
 AGENTS.md
+src/*.o
+src/*.d
+tests/*.o
+tests/*.d
+tests/test-json-helpers

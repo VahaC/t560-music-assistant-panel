@@ -71,8 +71,8 @@ EABI5
 /lib/ld-musl-armhf.so.1
 ```
 
-The `gtk_window_set_wmclass` deprecation message is a compiler warning, not a
-build failure. It is intentionally retained for legacy Openbox window matching.
+The legacy WM class is intentionally retained for Openbox window matching. Its
+GTK deprecation warning is suppressed only at that compatibility call site.
 
 Do not deploy a binary identified as x86-64 or aarch64.
 

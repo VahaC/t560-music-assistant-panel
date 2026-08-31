@@ -3,19 +3,46 @@ CC ?= cc
 PKG_CONFIG ?= pkg-config
 
 PACKAGES = gtk+-3.0 libsoup-3.0 json-glib-1.0
+TARGET = t560-panel
+TEST_TARGET = tests/test-json-helpers
+SOURCES = src/main.c \
+	  src/application.c \
+	  src/app_config.c \
+	  src/home_assistant_client.c \
+	  src/json_helpers.c \
+	  src/panel_ui.c
+OBJECTS = $(SOURCES:.c=.o)
+DEPFILES = $(OBJECTS:.o=.d)
+TEST_OBJECTS = tests/test_json_helpers.o src/json_helpers.o
+TEST_DEPFILES = tests/test_json_helpers.d
+
+CPPFLAGS += -Isrc $(shell $(PKG_CONFIG) --cflags $(PACKAGES))
 CFLAGS ?= -Os
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic $(shell $(PKG_CONFIG) --cflags $(PACKAGES))
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Wformat=2 \
+	  -Wstrict-prototypes -Wmissing-prototypes
 LDLIBS += $(shell $(PKG_CONFIG) --libs $(PACKAGES))
 
-.PHONY: all clean install
+.PHONY: all clean install test
 
-all: t560-panel
+all: $(TARGET)
 
-t560-panel: src/main.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+$(TARGET): $(OBJECTS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
+
+src/%.o: src/%.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+tests/%.o: tests/%.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+$(TEST_TARGET): $(TEST_OBJECTS)
+	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJECTS) $(LDLIBS)
+
+test: $(TEST_TARGET)
+	./$(TEST_TARGET)
 
 clean:
-	rm -f t560-panel
+	rm -f $(TARGET) $(OBJECTS) $(DEPFILES) tests/*.o tests/*.d $(TEST_TARGET)
 
 install: t560-panel
 	install -Dm755 t560-panel "$(DESTDIR)$(PREFIX)/bin/t560-panel"
@@ -24,3 +51,5 @@ install: t560-panel
 	install -Dm755 scripts/t560-restart-panel "$(DESTDIR)$(PREFIX)/bin/t560-restart-panel"
 	install -Dm644 config/config.ini.example "$(DESTDIR)/etc/t560-music-panel/config.ini.example"
 	install -Dm644 data/t560-music-panel.desktop "$(DESTDIR)$(PREFIX)/share/applications/t560-music-panel.desktop"
+
+-include $(DEPFILES) $(TEST_DEPFILES)
