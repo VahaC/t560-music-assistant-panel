@@ -113,14 +113,19 @@ void home_assistant_client_free(HomeAssistantClient *client)
     g_free(client);
 }
 
-gboolean home_assistant_client_get_states(HomeAssistantClient *client,
-                                          HomeAssistantResponse callback,
-                                          gpointer user_data)
+gboolean home_assistant_client_get_state(HomeAssistantClient *client,
+                                         const gchar *entity,
+                                         HomeAssistantResponse callback,
+                                         gpointer user_data,
+                                         GDestroyNotify user_data_destroy)
 {
-    gchar *url = g_strdup_printf("%s/api/states", client->base_url);
+    gchar *escaped_entity = g_uri_escape_string(entity, NULL, TRUE);
+    gchar *url = g_strdup_printf("%s/api/states/%s", client->base_url,
+                                 escaped_entity);
     gboolean started = send_request(client, "GET", url, NULL,
-                                    G_PRIORITY_DEFAULT, callback, user_data,
-                                    NULL);
+                                    G_PRIORITY_LOW, callback, user_data,
+                                    user_data_destroy);
+    g_free(escaped_entity);
     g_free(url);
     return started;
 }

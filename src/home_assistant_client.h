@@ -12,9 +12,11 @@ HomeAssistantClient *home_assistant_client_new(const gchar *base_url,
                                                const gchar *token);
 void home_assistant_client_free(HomeAssistantClient *client);
 
-gboolean home_assistant_client_get_states(HomeAssistantClient *client,
-                                          HomeAssistantResponse callback,
-                                          gpointer user_data);
+gboolean home_assistant_client_get_state(HomeAssistantClient *client,
+                                         const gchar *entity,
+                                         HomeAssistantResponse callback,
+                                         gpointer user_data,
+                                         GDestroyNotify user_data_destroy);
 gboolean home_assistant_client_call_service(HomeAssistantClient *client,
                                             const gchar *domain,
                                             const gchar *service,

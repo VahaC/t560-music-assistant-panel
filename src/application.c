@@ -23,9 +23,10 @@ typedef struct {
     gchar *repeat_state;
     gchar *queue_data;
     guint poll_source;
+    guint poll_pending;
     gint queue_selected;
     gint playlist_selected;
-    gboolean poll_in_flight;
+    gboolean poll_failed;
     gboolean player_playing;
     gboolean shuffle_state;
 } PanelApplication;
@@ -34,6 +35,19 @@ typedef struct {
     PanelApplication *application;
     gchar *url;
 } AlbumArtRequest;
+
+typedef enum {
+    POLL_REQUEST_PLAYER,
+    POLL_REQUEST_QUEUE,
+    POLL_REQUEST_PLAYLISTS,
+    POLL_REQUEST_ROOM
+} PollRequestKind;
+
+typedef struct {
+    PanelApplication *application;
+    PollRequestKind kind;
+    guint index;
+} PollRequest;
 
 static gboolean poll_states(gpointer user_data);
 
@@ -365,76 +379,107 @@ static void update_room(PanelApplication *application, guint index,
     panel_ui_set_room(application->ui, index, active);
 }
 
-static void states_finished(guint status_code, GBytes *body,
-                            const GError *error, gpointer user_data)
+static void poll_request_free(gpointer user_data)
 {
-    PanelApplication *application = user_data;
-    application->poll_in_flight = FALSE;
+    g_free(user_data);
+}
+
+static void state_finished(guint status_code, GBytes *body,
+                           const GError *error, gpointer user_data)
+{
+    PollRequest *request = user_data;
+    PanelApplication *application = request->application;
 
     if (error != NULL) {
         gchar *message = g_strdup_printf("Offline: %s", error->message);
         panel_ui_set_status(application->ui, message, TRUE);
         g_free(message);
-        return;
-    }
-    if (status_code != 200 || body == NULL) {
+        application->poll_failed = TRUE;
+    } else if (status_code != 200 || body == NULL) {
         gchar *message = g_strdup_printf("Home Assistant HTTP %u", status_code);
         panel_ui_set_status(application->ui, message, TRUE);
         g_free(message);
-        return;
+        application->poll_failed = TRUE;
+    } else {
+        gsize length = 0;
+        const gchar *data = g_bytes_get_data(body, &length);
+        GError *parse_error = NULL;
+        JsonParser *parser = json_parser_new();
+        if (json_parser_load_from_data(
+                parser, data, (gssize)length, &parse_error) &&
+            JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser))) {
+            JsonObject *state = json_node_get_object(
+                json_parser_get_root(parser));
+            switch (request->kind) {
+            case POLL_REQUEST_PLAYER:
+                update_player(application, state);
+                break;
+            case POLL_REQUEST_QUEUE:
+                update_queue(application, state);
+                break;
+            case POLL_REQUEST_PLAYLISTS:
+                update_playlists(application, state);
+                break;
+            case POLL_REQUEST_ROOM:
+                update_room(application, request->index, state);
+                break;
+            }
+        } else {
+            panel_ui_set_status(application->ui,
+                                "Invalid Home Assistant response", TRUE);
+            application->poll_failed = TRUE;
+        }
+        g_clear_error(&parse_error);
+        g_object_unref(parser);
     }
 
-    gsize length = 0;
-    const gchar *data = g_bytes_get_data(body, &length);
-    GError *parse_error = NULL;
-    JsonParser *parser = json_parser_new();
-    if (json_parser_load_from_data(parser, data, (gssize)length, &parse_error) &&
-        JSON_NODE_HOLDS_ARRAY(json_parser_get_root(parser))) {
-        GHashTable *states = g_hash_table_new(g_str_hash, g_str_equal);
-        JsonArray *array = json_node_get_array(json_parser_get_root(parser));
-        for (guint i = 0; i < json_array_get_length(array); i++) {
-            JsonObject *state = json_array_get_object_element(array, i);
-            const gchar *entity = json_object_string(state, "entity_id", NULL);
-            if (entity != NULL)
-                g_hash_table_insert(states, (gpointer)entity, state);
-        }
-        update_player(application, g_hash_table_lookup(
-                                       states,
-                                       application->config->player_entity));
-        update_queue(application, g_hash_table_lookup(
-                                      states,
-                                      application->config->queue_entity));
-        update_playlists(application, g_hash_table_lookup(
-                                          states,
-                                          application->config->playlists_entity));
-        for (guint i = 0; i < PANEL_ROOM_COUNT; i++) {
-            if (application->config->room_entities[i] != NULL) {
-                update_room(application, i,
-                            g_hash_table_lookup(
-                                states,
-                                application->config->room_entities[i]));
-            }
-        }
-        g_hash_table_unref(states);
+    g_assert(application->poll_pending > 0);
+    application->poll_pending--;
+    if (application->poll_pending == 0 && !application->poll_failed)
         panel_ui_set_status(application->ui, "Connected", FALSE);
-    } else {
-        panel_ui_set_status(application->ui,
-                            "Invalid Home Assistant response", TRUE);
+}
+
+static void start_state_request(PanelApplication *application,
+                                const gchar *entity, PollRequestKind kind,
+                                guint index)
+{
+    PollRequest *request = g_new0(PollRequest, 1);
+    request->application = application;
+    request->kind = kind;
+    request->index = index;
+
+    application->poll_pending++;
+    if (!home_assistant_client_get_state(
+            application->client, entity, state_finished, request,
+            poll_request_free)) {
+        application->poll_pending--;
+        application->poll_failed = TRUE;
+        poll_request_free(request);
     }
-    g_clear_error(&parse_error);
-    g_object_unref(parser);
 }
 
 static gboolean poll_states(gpointer user_data)
 {
     PanelApplication *application = user_data;
-    if (application->poll_in_flight)
+    if (application->poll_pending != 0)
         return G_SOURCE_CONTINUE;
 
-    application->poll_in_flight = TRUE;
-    if (!home_assistant_client_get_states(
-            application->client, states_finished, application)) {
-        application->poll_in_flight = FALSE;
+    application->poll_failed = FALSE;
+    start_state_request(application, application->config->player_entity,
+                        POLL_REQUEST_PLAYER, 0);
+    start_state_request(application, application->config->queue_entity,
+                        POLL_REQUEST_QUEUE, 0);
+    start_state_request(application, application->config->playlists_entity,
+                        POLL_REQUEST_PLAYLISTS, 0);
+    for (guint i = 0; i < PANEL_ROOM_COUNT; i++) {
+        if (application->config->room_entities[i] != NULL) {
+            start_state_request(application,
+                                application->config->room_entities[i],
+                                POLL_REQUEST_ROOM, i);
+        }
+    }
+
+    if (application->poll_pending == 0) {
         panel_ui_set_status(application->ui,
                             "Invalid Home Assistant URL", TRUE);
     }

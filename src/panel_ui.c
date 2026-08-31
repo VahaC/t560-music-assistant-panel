@@ -18,8 +18,15 @@ struct _PanelUi {
     GtkWidget *volume;
     GtkWidget *queue_list;
     GtkWidget *playlist_list;
+    gboolean changing_list_selection;
     GtkWidget *room_buttons[PANEL_ROOM_COUNT];
     GtkWidget *room_states[PANEL_ROOM_COUNT];
+};
+
+enum {
+    LIST_COLUMN_INDEX,
+    LIST_COLUMN_TEXT,
+    LIST_COLUMN_COUNT
 };
 
 static void add_css_class(GtkWidget *widget, const gchar *name)
@@ -99,22 +106,33 @@ static void page_clicked(GtkButton *button, gpointer user_data)
     emit_event(ui, PANEL_UI_SHOW_PAGE, page, -1);
 }
 
-static void queue_row_clicked(GtkButton *button, gpointer user_data)
+static gint selected_list_index(GtkTreeSelection *selection)
 {
-    PanelUi *ui = user_data;
-    gint index = GPOINTER_TO_INT(
-        g_object_get_data(G_OBJECT(button), "index"));
-    panel_ui_select_queue_item(ui, index);
-    emit_event(ui, PANEL_UI_SELECT_QUEUE_ITEM, NULL, index);
+    GtkTreeModel *model = NULL;
+    GtkTreeIter iter;
+    gint index = -1;
+
+    if (gtk_tree_selection_get_selected(selection, &model, &iter))
+        gtk_tree_model_get(model, &iter, LIST_COLUMN_INDEX, &index, -1);
+    return index;
 }
 
-static void playlist_row_clicked(GtkButton *button, gpointer user_data)
+static void queue_selection_changed(GtkTreeSelection *selection,
+                                    gpointer user_data)
 {
     PanelUi *ui = user_data;
-    gint index = GPOINTER_TO_INT(
-        g_object_get_data(G_OBJECT(button), "index"));
-    panel_ui_select_playlist(ui, index);
-    emit_event(ui, PANEL_UI_SELECT_PLAYLIST, NULL, index);
+    if (!ui->changing_list_selection)
+        emit_event(ui, PANEL_UI_SELECT_QUEUE_ITEM, NULL,
+                   selected_list_index(selection));
+}
+
+static void playlist_selection_changed(GtkTreeSelection *selection,
+                                       gpointer user_data)
+{
+    PanelUi *ui = user_data;
+    if (!ui->changing_list_selection)
+        emit_event(ui, PANEL_UI_SELECT_PLAYLIST, NULL,
+                   selected_list_index(selection));
 }
 
 static void play_queue_clicked(GtkButton *button, gpointer user_data)
@@ -131,22 +149,44 @@ static void play_playlist_clicked(GtkButton *button, gpointer user_data)
 
 static void select_row(GtkWidget *list, gint selected)
 {
-    GList *rows = gtk_container_get_children(GTK_CONTAINER(list));
-    for (GList *item = rows; item != NULL; item = item->next) {
-        GtkWidget *row = GTK_WIDGET(item->data);
-        gint index = GPOINTER_TO_INT(
-            g_object_get_data(G_OBJECT(row), "index"));
-        toggle_css_class(row, "selected", index == selected);
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(
+        GTK_TREE_VIEW(list));
+    gtk_tree_selection_unselect_all(selection);
+    if (selected >= 0) {
+        GtkTreePath *path = gtk_tree_path_new_from_indices(selected, -1);
+        gtk_tree_selection_select_path(selection, path);
+        gtk_tree_path_free(path);
     }
-    g_list_free(rows);
 }
 
-static void clear_container(GtkWidget *container)
+static GtkWidget *new_list(PanelUi *ui, gboolean queue)
 {
-    GList *children = gtk_container_get_children(GTK_CONTAINER(container));
-    for (GList *item = children; item != NULL; item = item->next)
-        gtk_widget_destroy(GTK_WIDGET(item->data));
-    g_list_free(children);
+    GtkListStore *store = gtk_list_store_new(
+        LIST_COLUMN_COUNT, G_TYPE_INT, G_TYPE_STRING);
+    GtkWidget *list = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+    g_object_unref(store);
+
+    gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(list), FALSE);
+    gtk_tree_view_set_enable_search(GTK_TREE_VIEW(list), FALSE);
+    gtk_tree_view_set_fixed_height_mode(GTK_TREE_VIEW(list), TRUE);
+    add_css_class(list, "list-view");
+
+    GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+    g_object_set(renderer, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+    gtk_cell_renderer_set_fixed_size(renderer, -1, queue ? 90 : 82);
+    GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes(
+        "", renderer, "text", LIST_COLUMN_TEXT, NULL);
+    gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(list), column);
+
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(
+        GTK_TREE_VIEW(list));
+    gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
+    g_signal_connect(selection, "changed",
+                     G_CALLBACK(queue ? queue_selection_changed
+                                      : playlist_selection_changed),
+                     ui);
+    return list;
 }
 
 static gchar *format_time(gdouble seconds)
@@ -256,7 +296,9 @@ static GtkWidget *list_page(PanelUi *ui, gboolean queue)
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER,
                                    GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_kinetic_scrolling(GTK_SCROLLED_WINDOW(scroll), TRUE);
-    GtkWidget *list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_scrolled_window_set_capture_button_press(GTK_SCROLLED_WINDOW(scroll),
+                                                  TRUE);
+    GtkWidget *list = new_list(ui, queue);
     gtk_container_add(GTK_CONTAINER(scroll), list);
     GtkWidget *play = new_button(queue ? "PLAY SELECTED TRACK"
                                        : "PLAY SELECTED PLAYLIST",
@@ -380,12 +422,12 @@ void panel_ui_install_styles(void)
         ".header{background:#101521;border-bottom:1px solid #263248}"
         ".header-title{font-size:25px;font-weight:bold}.status{font-size:16px;color:#00cfff}.error{color:#ff6b72}"
         "button{background:#141927;color:#f4f4ff;border:2px solid #334466;border-radius:14px;box-shadow:none}"
-        "button:active{background:#24344e}button.active,.list-row.selected{background:#123d45;border-color:#00cfff;color:#7deaff}"
+        "button:active{background:#24344e}button.active{background:#123d45;border-color:#00cfff;color:#7deaff}"
         ".track-title{font-size:31px;font-weight:bold}.artist{font-size:23px;color:#6ca8df}.position{font-size:17px;color:#7f8ca5}"
         "progressbar trough{min-height:14px;background:#1a1a35;border-radius:8px}progressbar progress{min-height:14px;background:#00cfff;border-radius:8px}"
         ".control-button,.mode-button{font-size:18px;font-weight:bold}.play-button{font-size:24px;font-weight:bold;border-color:#00cfff}"
         ".volume{font-size:20px;font-weight:bold;color:#78a7d6}.nav-button{font-size:16px;font-weight:bold}"
-        ".list-row{font-size:20px;border-color:#27344a}.play-selected{font-size:22px;font-weight:bold;border-color:#00cfff}"
+        ".list-view{font-size:20px;background:#090b11;color:#f4f4ff}.list-view:selected{background:#123d45;color:#7deaff}.play-selected{font-size:22px;font-weight:bold;border-color:#00cfff}"
         ".room-help{font-size:18px;color:#77779a}.room-card{background:#121521;border:2px solid #2a3044;border-radius:22px}"
         ".room-card.active{background:#163d3d;border-color:#00cfff}.room-name{font-size:29px;font-weight:bold}.room-state{font-size:22px;color:#7d89a4}"
         ".setup-title{font-size:38px;font-weight:bold;color:#00cfff}.config-error{font-size:21px}";
@@ -449,47 +491,56 @@ void panel_ui_set_album_art(PanelUi *ui, GdkPixbuf *pixbuf)
 void panel_ui_set_queue(PanelUi *ui, GPtrArray *titles, GPtrArray *artists,
                         guint count, gint selected)
 {
-    clear_container(ui->queue_list);
+    GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(
+        GTK_TREE_VIEW(ui->queue_list)));
+    ui->changing_list_selection = TRUE;
+    gtk_list_store_clear(store);
     for (guint i = 0; i < count; i++) {
         const gchar *title = g_ptr_array_index(titles, i);
         const gchar *artist = g_ptr_array_index(artists, i);
         gchar *text = *artist != '\0' ? g_strdup_printf("%s\n%s", title, artist)
                                       : g_strdup(title);
-        GtkWidget *row = new_button(text, "list-row", -1, 90);
-        gtk_widget_set_hexpand(row, TRUE);
-        g_object_set_data(G_OBJECT(row), "index", GINT_TO_POINTER((gint)i));
-        toggle_css_class(row, "selected", (gint)i == selected);
-        g_signal_connect(row, "clicked", G_CALLBACK(queue_row_clicked), ui);
-        gtk_box_pack_start(GTK_BOX(ui->queue_list), row, FALSE, FALSE, 5);
+        GtkTreeIter iter;
+        gtk_list_store_append(store, &iter);
+        gtk_list_store_set(store, &iter,
+                           LIST_COLUMN_INDEX, (gint)i,
+                           LIST_COLUMN_TEXT, text, -1);
         g_free(text);
     }
-    gtk_widget_show_all(ui->queue_list);
+    select_row(ui->queue_list, selected);
+    ui->changing_list_selection = FALSE;
 }
 
 void panel_ui_set_playlists(PanelUi *ui, GPtrArray *names, guint count,
                             gint selected)
 {
-    clear_container(ui->playlist_list);
+    GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(
+        GTK_TREE_VIEW(ui->playlist_list)));
+    ui->changing_list_selection = TRUE;
+    gtk_list_store_clear(store);
     for (guint i = 0; i < count; i++) {
-        GtkWidget *row = new_button(g_ptr_array_index(names, i), "list-row",
-                                    -1, 82);
-        gtk_widget_set_hexpand(row, TRUE);
-        g_object_set_data(G_OBJECT(row), "index", GINT_TO_POINTER((gint)i));
-        toggle_css_class(row, "selected", (gint)i == selected);
-        g_signal_connect(row, "clicked", G_CALLBACK(playlist_row_clicked), ui);
-        gtk_box_pack_start(GTK_BOX(ui->playlist_list), row, FALSE, FALSE, 5);
+        GtkTreeIter iter;
+        gtk_list_store_append(store, &iter);
+        gtk_list_store_set(store, &iter,
+                           LIST_COLUMN_INDEX, (gint)i,
+                           LIST_COLUMN_TEXT, g_ptr_array_index(names, i), -1);
     }
-    gtk_widget_show_all(ui->playlist_list);
+    select_row(ui->playlist_list, selected);
+    ui->changing_list_selection = FALSE;
 }
 
 void panel_ui_select_queue_item(PanelUi *ui, gint selected)
 {
+    ui->changing_list_selection = TRUE;
     select_row(ui->queue_list, selected);
+    ui->changing_list_selection = FALSE;
 }
 
 void panel_ui_select_playlist(PanelUi *ui, gint selected)
 {
+    ui->changing_list_selection = TRUE;
     select_row(ui->playlist_list, selected);
+    ui->changing_list_selection = FALSE;
 }
 
 void panel_ui_set_room(PanelUi *ui, guint index, gboolean active)
