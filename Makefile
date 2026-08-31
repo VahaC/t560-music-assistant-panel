@@ -6,13 +6,22 @@ PYTHON ?= python3
 PACKAGES = gtk+-3.0 libsoup-3.0 json-glib-1.0
 TARGET = t560-panel
 TEST_TARGET = tests/test-json-helpers
+RESOURCE_XML = data/t560.gresource.xml
+RESOURCE_FILES = data/icons/light-1.png \
+		 data/icons/light-2.png \
+		 data/icons/fan.png \
+		 data/icons/ac.png \
+		 data/icons/desk-lamp.png \
+		 data/icons/desk-led-strip.png
+RESOURCE_SOURCE = build/t560-resources.c
 SOURCES = src/main.c \
 	  src/application.c \
 	  src/app_config.c \
 	  src/home_assistant_client.c \
 	  src/json_helpers.c \
 	  src/panel_ui.c \
-	  src/system_status.c
+	  src/system_status.c \
+	  $(RESOURCE_SOURCE)
 OBJECTS = $(SOURCES:.c=.o)
 DEPFILES = $(OBJECTS:.o=.d)
 TEST_OBJECTS = tests/test_json_helpers.o src/json_helpers.o
@@ -34,6 +43,15 @@ $(TARGET): $(OBJECTS)
 src/%.o: src/%.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c -o $@ $<
 
+$(RESOURCE_SOURCE): $(RESOURCE_XML) $(RESOURCE_FILES)
+	mkdir -p build
+	glib-compile-resources --generate-source --target=$@ \
+		--sourcedir=data $(RESOURCE_XML)
+
+build/%.o: build/%.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Wno-overlength-strings \
+		-MMD -MP -c -o $@ $<
+
 tests/%.o: tests/%.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c -o $@ $<
 
@@ -46,6 +64,8 @@ test: $(TEST_TARGET)
 
 clean:
 	rm -f $(TARGET) $(OBJECTS) $(DEPFILES) tests/*.o tests/*.d $(TEST_TARGET)
+	rm -f $(RESOURCE_SOURCE)
+	rmdir build 2>/dev/null || true
 
 install: t560-panel
 	install -Dm755 t560-panel "$(DESTDIR)$(PREFIX)/bin/t560-panel"

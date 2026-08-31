@@ -24,7 +24,8 @@ or an on-screen keyboard. All settings are edited over SSH.
 - Shuffle and Repeat Off/All/One controls.
 - Queue browsing and playback of a selected queue item without replacing the queue.
 - Playlist browsing and playback through `music_assistant.play_media`.
-- Light 1, Light 2, Fan, and AC room controls.
+- Light 1, Light 2, Fan, AC, Desk Lamp, and Desk LED Strip room controls.
+- Configurable brightness and color-temperature adjustment for any room light.
 - Direct Home Assistant REST API access without loading Lovelace.
 - A separate token file with `0600` permissions.
 - Watchdog, desktop entry, Openbox rule, and ARMv7 `APKBUILD`.
@@ -49,6 +50,13 @@ into the user-owned configuration directory. Replace every placeholder with
 the entity IDs created by Home Assistant and the Media Controller integration.
 Put the long-lived access token in the separate `token` file. Never commit the
 token.
+
+Room adjustment controls are enabled per tile in the `[room_features]` section.
+The supported values are `brightness` and `color_temperature`, separated by a
+comma. Under the normal watchdog launch, saving a valid `config.ini`
+automatically restarts only the panel process within about two seconds. The
+tablet does not reboot. An invalid intermediate file keeps the current panel
+running and reports the configuration error in the log.
 
 The Media Controller integration from the ESP32 controller repository must be
 installed and configured in Home Assistant first. It creates the queue and

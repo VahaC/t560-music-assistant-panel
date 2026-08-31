@@ -12,6 +12,8 @@ typedef enum {
     PANEL_UI_TOGGLE_SHUFFLE,
     PANEL_UI_CYCLE_REPEAT,
     PANEL_UI_TOGGLE_ROOM,
+    PANEL_UI_SET_ROOM_BRIGHTNESS,
+    PANEL_UI_SET_ROOM_COLOR_TEMPERATURE,
     PANEL_UI_SHOW_PAGE,
     PANEL_UI_SELECT_QUEUE_ITEM,
     PANEL_UI_SELECT_PLAYLIST,
@@ -46,7 +48,10 @@ void panel_ui_set_playlists(PanelUi *ui, GPtrArray *names, guint count,
                             gint selected);
 void panel_ui_select_queue_item(PanelUi *ui, gint selected);
 void panel_ui_select_playlist(PanelUi *ui, gint selected);
-void panel_ui_set_room(PanelUi *ui, guint index, gboolean active);
+void panel_ui_set_room(PanelUi *ui, guint index, gboolean active,
+                       gint brightness_percent, gint color_temp_kelvin,
+                       gint min_color_temp_kelvin,
+                       gint max_color_temp_kelvin);
 void panel_ui_show_page(PanelUi *ui, const gchar *page, const gchar *title);
 
 #endif

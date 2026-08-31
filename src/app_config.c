@@ -4,12 +4,17 @@
 
 static gchar *config_path(const gchar *name)
 {
-    gchar *directory = g_build_filename(g_get_user_config_dir(),
-                                        "t560-music-panel", NULL);
+    gchar *directory = app_config_directory_path();
     gchar *path = g_build_filename(directory, name, NULL);
 
     g_free(directory);
     return path;
+}
+
+gchar *app_config_directory_path(void)
+{
+    return g_build_filename(g_get_user_config_dir(),
+                            "t560-music-panel", NULL);
 }
 
 static gchar *read_string(GKeyFile *file, const gchar *group,
@@ -39,13 +44,47 @@ static gint read_integer(GKeyFile *file, const gchar *group,
     return value;
 }
 
+static gboolean read_room_features(GKeyFile *file, const gchar *key,
+                                   gboolean *brightness,
+                                   gboolean *color_temperature,
+                                   gchar **error_message)
+{
+    gchar *value = read_string(file, "room_features", key, "");
+    gchar **features = g_strsplit(value, ",", -1);
+
+    *brightness = FALSE;
+    *color_temperature = FALSE;
+    for (guint i = 0; features[i] != NULL; i++) {
+        gchar *feature = g_strstrip(features[i]);
+        if (*feature == '\0' || g_str_equal(feature, "none"))
+            continue;
+        if (g_str_equal(feature, "brightness")) {
+            *brightness = TRUE;
+        } else if (g_str_equal(feature, "color_temperature")) {
+            *color_temperature = TRUE;
+        } else {
+            *error_message = g_strdup_printf(
+                "Unsupported room feature '%s' for %s.", feature, key);
+            g_strfreev(features);
+            g_free(value);
+            return FALSE;
+        }
+    }
+
+    g_strfreev(features);
+    g_free(value);
+    return TRUE;
+}
+
 static gboolean load_key_file(AppConfig *config, gchar **error_message)
 {
     static const gchar *room_keys[PANEL_ROOM_COUNT] = {
-        "light_1", "light_2", "fan", "ac"
+        "light_1", "light_2", "fan", "ac", "desk_lamp",
+        "desk_led_strip"
     };
     static const gchar *default_labels[PANEL_ROOM_COUNT] = {
-        "LIGHT 1", "LIGHT 2", "FAN", "AC"
+        "LIGHT 1", "LIGHT 2", "FAN", "AC", "DESK LAMP",
+        "DESK LED STRIP"
     };
     gchar *path = config_path("config.ini");
     GKeyFile *file = g_key_file_new();
@@ -68,6 +107,13 @@ static gboolean load_key_file(AppConfig *config, gchar **error_message)
         config->room_entities[i] = read_string(file, "entities", room_keys[i], NULL);
         config->room_labels[i] = read_string(file, "labels", room_keys[i],
                                              default_labels[i]);
+        if (!read_room_features(
+                file, room_keys[i], &config->room_brightness[i],
+                &config->room_color_temperature[i], error_message)) {
+            g_key_file_unref(file);
+            g_free(path);
+            return FALSE;
+        }
     }
     config->poll_interval_ms = (guint)CLAMP(
         read_integer(file, "panel", "poll_interval_ms", PANEL_DEFAULT_POLL_MS),

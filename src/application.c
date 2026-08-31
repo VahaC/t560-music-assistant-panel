@@ -11,6 +11,7 @@
 #define APPLICATION_ID "com.vahac.T560MusicPanel"
 
 typedef struct {
+    GtkApplication *gtk_application;
     GtkWidget *window;
     AppConfig *config;
     PanelUi *ui;
@@ -26,6 +27,8 @@ typedef struct {
     guint poll_source;
     guint clock_source;
     guint battery_source;
+    guint config_reload_source;
+    GFileMonitor *config_monitor;
     gint64 clock_minute;
     guint poll_pending;
     gint64 next_playlist_poll_us;
@@ -56,6 +59,81 @@ typedef struct {
 
 static gboolean poll_states(gpointer user_data);
 
+static gboolean file_is_panel_config(GFile *file)
+{
+    if (file == NULL)
+        return FALSE;
+    gchar *basename = g_file_get_basename(file);
+    gboolean matches = g_strcmp0(basename, "config.ini") == 0;
+    g_free(basename);
+    return matches;
+}
+
+static gboolean reload_config(gpointer user_data)
+{
+    PanelApplication *application = user_data;
+    gchar *failure = NULL;
+    AppConfig *updated = app_config_load(&failure);
+
+    application->config_reload_source = 0;
+    if (updated == NULL) {
+        gchar *message = g_strdup_printf("Config reload failed: %s", failure);
+        panel_ui_set_status(application->ui, message, TRUE);
+        g_warning("%s", message);
+        g_free(message);
+        g_free(failure);
+        return G_SOURCE_REMOVE;
+    }
+
+    app_config_free(updated);
+    panel_ui_set_status(application->ui, "Applying configuration", FALSE);
+    g_application_quit(G_APPLICATION(application->gtk_application));
+    return G_SOURCE_REMOVE;
+}
+
+static void config_changed(GFileMonitor *monitor, GFile *file,
+                           GFile *other_file, GFileMonitorEvent event,
+                           gpointer user_data)
+{
+    (void)monitor;
+    PanelApplication *application = user_data;
+    gboolean complete = event == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
+                        event == G_FILE_MONITOR_EVENT_CREATED ||
+                        event == G_FILE_MONITOR_EVENT_MOVED_IN ||
+                        event == G_FILE_MONITOR_EVENT_RENAMED;
+
+    if (!complete ||
+        (!file_is_panel_config(file) &&
+         !file_is_panel_config(other_file))) {
+        return;
+    }
+
+    if (application->config_reload_source != 0)
+        g_source_remove(application->config_reload_source);
+    application->config_reload_source = g_timeout_add_full(
+        G_PRIORITY_DEFAULT_IDLE, 400, reload_config, application, NULL);
+}
+
+static void start_config_monitor(PanelApplication *application)
+{
+    gchar *directory_path = app_config_directory_path();
+    GFile *directory = g_file_new_for_path(directory_path);
+    GError *error = NULL;
+
+    application->config_monitor = g_file_monitor_directory(
+        directory, G_FILE_MONITOR_WATCH_MOVES, NULL, &error);
+    if (application->config_monitor != NULL) {
+        g_signal_connect(application->config_monitor, "changed",
+                         G_CALLBACK(config_changed), application);
+    } else {
+        g_warning("Could not monitor config.ini: %s", error->message);
+        g_clear_error(&error);
+    }
+
+    g_object_unref(directory);
+    g_free(directory_path);
+}
+
 static gchar *service_json(const gchar *entity, const gchar *key,
                            const gchar *string_value, gint boolean_value)
 {
@@ -71,6 +149,21 @@ static gchar *service_json(const gchar *entity, const gchar *key,
             json_builder_add_string_value(
                 builder, string_value != NULL ? string_value : "");
     }
+    json_builder_end_object(builder);
+    gchar *json = json_builder_to_string(builder);
+    g_object_unref(builder);
+    return json;
+}
+
+static gchar *room_value_json(const gchar *entity, const gchar *key,
+                              gint value)
+{
+    JsonBuilder *builder = json_builder_new();
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "entity_id");
+    json_builder_add_string_value(builder, entity);
+    json_builder_set_member_name(builder, key);
+    json_builder_add_int_value(builder, value);
     json_builder_end_object(builder);
     gchar *json = json_builder_to_string(builder);
     g_object_unref(builder);
@@ -203,6 +296,32 @@ static void handle_ui_event(PanelUiEvent event, const gchar *value, gint index,
             application->config->room_entities[index] != NULL) {
             call_entity_service(application, "homeassistant", "toggle",
                                 application->config->room_entities[index]);
+        }
+        break;
+    case PANEL_UI_SET_ROOM_BRIGHTNESS:
+        if (index >= 0 && index < PANEL_ROOM_COUNT && value != NULL &&
+            application->config->room_entities[index] != NULL &&
+            application->config->room_brightness[index]) {
+            gint brightness = (gint)g_ascii_strtoll(value, NULL, 10);
+            brightness = CLAMP(brightness, 1, 100);
+            gchar *json = room_value_json(
+                application->config->room_entities[index],
+                "brightness_pct", brightness);
+            call_service(application, "light", "turn_on", json);
+            g_free(json);
+        }
+        break;
+    case PANEL_UI_SET_ROOM_COLOR_TEMPERATURE:
+        if (index >= 0 && index < PANEL_ROOM_COUNT && value != NULL &&
+            application->config->room_entities[index] != NULL &&
+            application->config->room_color_temperature[index]) {
+            gint temperature = (gint)g_ascii_strtoll(value, NULL, 10);
+            temperature = CLAMP(temperature, 1000, 10000);
+            gchar *json = room_value_json(
+                application->config->room_entities[index],
+                "color_temp_kelvin", temperature);
+            call_service(application, "light", "turn_on", json);
+            g_free(json);
         }
         break;
     case PANEL_UI_SHOW_PAGE:
@@ -379,9 +498,34 @@ static void update_room(PanelApplication *application, guint index,
 {
     if (state == NULL)
         return;
+    JsonObject *attributes = json_state_attributes(state);
     gboolean active = g_str_equal(
         json_object_string(state, "state", ""), "on");
-    panel_ui_set_room(application->ui, index, active);
+    gdouble value = 0.0;
+    gint brightness = -1;
+    gint color_temperature = -1;
+    gint min_color_temperature = 2000;
+    gint max_color_temperature = 6500;
+
+    if (json_object_number(attributes, "brightness", &value) && value >= 0.0)
+        brightness = CLAMP((gint)(value * 100.0 / 255.0 + 0.5), 1, 100);
+    if (json_object_number(attributes, "color_temp_kelvin", &value) &&
+        value > 0.0) {
+        color_temperature = (gint)(value + 0.5);
+    } else if (json_object_number(attributes, "color_temp", &value) &&
+               value > 0.0) {
+        color_temperature = (gint)(1000000.0 / value + 0.5);
+    }
+    if (json_object_number(attributes, "min_color_temp_kelvin", &value) &&
+        value > 0.0)
+        min_color_temperature = (gint)(value + 0.5);
+    if (json_object_number(attributes, "max_color_temp_kelvin", &value) &&
+        value > 0.0)
+        max_color_temperature = (gint)(value + 0.5);
+
+    panel_ui_set_room(application->ui, index, active, brightness,
+                      color_temperature, min_color_temperature,
+                      max_color_temperature);
 }
 
 static void poll_request_free(gpointer user_data)
@@ -640,6 +784,9 @@ static void panel_application_free(PanelApplication *application)
         g_source_remove(application->clock_source);
     if (application->battery_source != 0)
         g_source_remove(application->battery_source);
+    if (application->config_reload_source != 0)
+        g_source_remove(application->config_reload_source);
+    g_clear_object(&application->config_monitor);
     home_assistant_client_free(application->client);
     panel_ui_free(application->ui);
     app_config_free(application->config);
@@ -657,6 +804,7 @@ static void panel_application_free(PanelApplication *application)
 static void activate(GtkApplication *gtk_application, gpointer user_data)
 {
     PanelApplication *application = user_data;
+    application->gtk_application = gtk_application;
     if (application->window != NULL) {
         gtk_window_present(GTK_WINDOW(application->window));
         return;
@@ -688,6 +836,7 @@ static void activate(GtkApplication *gtk_application, gpointer user_data)
                                        application);
         content = panel_ui_build(application->ui);
         start_header_updates(application);
+        start_config_monitor(application);
         poll_states(application);
         application->poll_source = g_timeout_add(
             application->config->poll_interval_ms, poll_states, application);

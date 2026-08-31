@@ -15,12 +15,26 @@ light_1=light.your_controller_light_1
 light_2=light.your_controller_light_2
 fan=switch.your_controller_fan
 ac=switch.your_controller_ac
+desk_lamp=light.your_desk_lamp
+desk_led_strip=light.your_desk_led_strip
 
 [labels]
 light_1=LIGHT 1
 light_2=LIGHT 2
 fan=FAN
 ac=AC
+desk_lamp=DESK LAMP
+desk_led_strip=DESK LED STRIP
+
+# Optional comma-separated controls: brightness and color_temperature.
+# They can be enabled for any configured room tile that points to a light.
+[room_features]
+light_1=brightness,color_temperature
+light_2=brightness,color_temperature
+fan=none
+ac=none
+desk_lamp=none
+desk_led_strip=brightness,color_temperature
 
 [panel]
 # 1000 ms is responsive while keeping CPU/network use low.
