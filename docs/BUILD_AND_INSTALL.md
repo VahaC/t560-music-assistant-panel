@@ -158,11 +158,16 @@ ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560
 Run:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" 'ldd ~/.local/bin/t560-panel 2>&1; command -v xdotool || echo "xdotool not found"'
+ssh.exe "vahac@${TabletIp}" 'ldd ~/.local/bin/t560-panel 2>&1; command -v xdotool || echo "xdotool not found"; ls /usr/lib/libXss.so.1 2>/dev/null || echo "libXss not found"'
 ```
 
 Every library must resolve to an absolute path. Any line containing `not found`
 identifies a real missing dependency.
+
+`libXss.so.1` is optional. The button handler reads the X idle timer through it
+to turn the display off after the configured inactivity timeout. Without that
+library the handler asks the X server to apply the same timeout instead, which
+works but is not logged per event.
 
 Do not use `apk info -e` for this check. The current root filesystem contains
 manually installed libraries whose package database records are unavailable.
@@ -201,6 +206,19 @@ ac=switch.actual_controller_ac
 The player, queue, and playlists entities are required. Replace every example
 with the exact entity ID shown by Home Assistant. Remove optional room-control
 keys that are not used.
+
+The `[panel]` section holds the timing settings, including the inactivity
+timeout that turns the display off:
+
+```ini
+[panel]
+poll_interval_ms=1000
+playlist_poll_interval_ms=60000
+screen_off_seconds=30
+```
+
+Set `screen_off_seconds=0` to keep the display on until the Power button is
+pressed. Other values are clamped to 5-3600 seconds.
 
 In `nano`, save with `Ctrl+O`, press `Enter`, and exit with `Ctrl+X`.
 
@@ -269,10 +287,13 @@ Verify on the touchscreen:
 6. Configured room controls work.
 7. Matchbox Keyboard does not open.
 8. A short Power press turns the display off.
-9. Any physical key or touchscreen input wakes the display.
+9. Any physical key or touchscreen input wakes the display, and the
+   wake-up tap does not activate the control under the finger.
 10. A long Power press opens the existing power menu.
 11. Home toggles between the panel and desktop while the display is on.
 12. If the display is off, Home wakes it without toggling the panel.
+13. The display turns off on its own after `screen_off_seconds` without input,
+    and any touch wakes it again.
 
 Do not enable autostart until this test passes.
 
@@ -463,9 +484,17 @@ tail -n 20 "$HOME/.local/state/power-button.log"
 
 Verify the main player page and at least one Home Assistant action on the
 touchscreen. Then press Power briefly, confirm that the display turns off, and
-confirm that both a physical key and a touchscreen tap wake it. Test both Home
+confirm that both a physical key and a touchscreen tap wake it. Tap directly
+on a player button while the display is off: it must only wake the display.
+Test both Home
 paths: panel-to-desktop-to-panel while the display is on, and wake-only while
-the display is off.
+the display is off. Finally, leave the tablet untouched for the configured
+`screen_off_seconds` and confirm that the display turns off by itself. The
+handler log records the reason:
+
+```text
+idle 30.0s: backlight off
+```
 
 ## 7. Roll back a failed update
 
@@ -530,6 +559,15 @@ pkill -x t560-panel
 ```
 
 The watchdog starts it again within two seconds.
+
+The `screen_off_seconds` value is read by the button handler at start-up.
+Restart that handler after changing it:
+
+```sh
+pkill -f '[t]560-power-button.py'
+nohup python3 "$HOME/.local/bin/t560-power-button.py" \
+  >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
+```
 
 # Logs and diagnostics
 

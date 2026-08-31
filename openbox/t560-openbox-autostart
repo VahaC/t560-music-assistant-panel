@@ -5,7 +5,8 @@ export LANGUAGE=en_US:en
 export LC_ALL=en_US.UTF-8
 export GTK_THEME=Adwaita:dark
 
-# Disable automatic timeouts. The Power handler controls DPMS explicitly and
+# Disable the screen saver and the inherited timeouts. The Power handler
+# controls DPMS explicitly, applies the configured inactivity timeout, and
 # allows any key or touchscreen input to wake the display.
 xset s off
 xset s noblank

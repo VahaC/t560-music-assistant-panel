@@ -22,6 +22,10 @@ or an on-screen keyboard. All settings are edited over SSH.
 - A separate token file with `0600` permissions.
 - Watchdog, desktop entry, Openbox rule, and ARMv7 `APKBUILD`.
 - A short Power press turns the display off; any key or touchscreen input wakes it.
+- The tap that wakes the display only wakes it: the button handler holds a
+  pointer grab while the display is off, so no control is pressed by mistake.
+- The display turns off automatically after a configurable inactivity timeout
+  (`screen_off_seconds`, 30 seconds by default).
 - The physical Home button toggles between the panel and desktop while the
   display is on, and only wakes the display while it is off.
 - The existing long-press Power menu is retained.

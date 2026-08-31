@@ -27,3 +27,8 @@ ac=AC
 poll_interval_ms=1000
 # Playlist state can be much larger and changes infrequently.
 playlist_poll_interval_ms=60000
+# Turn the display off after this many seconds without touchscreen or key
+# input. Use 0 to keep the display on until the Power button is pressed.
+# Values are clamped to 5-3600 seconds. The Power and Home button handler
+# reads this key at start-up.
+screen_off_seconds=30

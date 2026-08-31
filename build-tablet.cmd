@@ -29,4 +29,5 @@ echo.
 echo Build complete: %CD%\t560-panel
 echo SHA256SUMS has been updated.
 popd
+pause
 exit /b 0
