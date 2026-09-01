@@ -45,6 +45,7 @@ Installed files:
 /home/vahac/.config/t560-music-panel/config.ini
 /home/vahac/.config/t560-music-panel/token
 /home/vahac/.local/share/applications/t560-home-assistant.desktop
+/home/vahac/.local/share/icons/hicolor/<size>/apps/t560-music-panel.png
 ```
 
 ## Build the ARMv7 executable on Windows
@@ -125,7 +126,7 @@ Run the ARMv7 Docker build described above. Confirm that
 In PowerShell:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" "mkdir -p ~/.local/bin ~/.local/state ~/.local/share/applications ~/.config/t560-music-panel ~/.config/openbox"
+ssh.exe "vahac@${TabletIp}" "mkdir -p ~/.local/bin ~/.local/state ~/.local/share/applications ~/.config/t560-music-panel ~/.config/openbox ~/.local/share/icons/hicolor/16x16/apps ~/.local/share/icons/hicolor/24x24/apps ~/.local/share/icons/hicolor/32x32/apps ~/.local/share/icons/hicolor/48x48/apps ~/.local/share/icons/hicolor/64x64/apps ~/.local/share/icons/hicolor/128x128/apps ~/.local/share/icons/hicolor/256x256/apps ~/.local/share/icons/hicolor/512x512/apps"
 ```
 
 No root access is required.
@@ -146,6 +147,14 @@ Send-T560File .\scripts\t560-configure-openbox.py /home/vahac/.local/bin/t560-co
 Send-T560File .\config\config.ini.example /home/vahac/.config/t560-music-panel/config.ini.example
 Send-T560File .\openbox\t560-openbox-autostart /home/vahac/.config/openbox/autostart.t560-new
 Send-T560File .\data\t560-home-assistant.desktop /home/vahac/.local/share/applications/t560-home-assistant.desktop.new
+Send-T560File .\data\icons\hicolor\16x16\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/16x16/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\24x24\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/24x24/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\32x32\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/32x32/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\48x48\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/48x48/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\64x64\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/64x64/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\128x128\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/128x128/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\256x256\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/256x256/apps/t560-music-panel.png
+Send-T560File .\data\icons\hicolor\512x512\apps\t560-music-panel.png /home/vahac/.local/share/icons/hicolor/512x512/apps/t560-music-panel.png
 ```
 
 Create the initial configuration without overwriting an existing one, and set
@@ -361,6 +370,13 @@ The existing Tint2 configurations already reference
 `~/.local/share/applications/t560-home-assistant.desktop`. The installed desktop
 entry changes that existing launcher slot into a `Restart Music Panel` button.
 Tint2 reloads the updated launcher after the next login or reboot.
+
+The desktop entry refers to the `t560-music-panel` icon, which is installed
+into the user icon theme at
+`~/.local/share/icons/hicolor/<size>/apps/t560-music-panel.png`. Tint2 resolves
+the name through the icon theme, so the launcher on the desktop shows the panel
+icon instead of the generic audio icon. Regenerate the icon files with
+`python3 tools/make-app-icon.py` after the geometry or the colours change.
 
 ## 10. Start the watchdog
 

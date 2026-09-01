@@ -35,6 +35,9 @@ or an on-screen keyboard. All settings are edited over SSH.
 - Direct Home Assistant REST API access without loading Lovelace.
 - A separate token file with `0600` permissions.
 - Watchdog, desktop entry, Openbox rule, and ARMv7 `APKBUILD`.
+- A dedicated launcher icon installed into the `hicolor` icon theme, so the
+  desktop launcher and the task bar show the panel icon. The icon is
+  regenerated from geometry by `tools/make-app-icon.py`.
 - A short Power press turns the display off; any key or touchscreen input wakes it.
 - The tap that wakes the display only wakes it: the button handler holds a
   pointer grab while the display is off, so no control is pressed by mistake.

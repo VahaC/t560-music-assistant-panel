@@ -2,7 +2,7 @@
 Type=Application
 Name=Music Panel
 Exec=/usr/bin/t560-open-panel
-Icon=audio-x-generic
+Icon=t560-music-panel
 Terminal=false
 Categories=AudioVideo;Audio;
 

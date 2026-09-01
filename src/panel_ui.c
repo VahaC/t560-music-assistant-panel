@@ -445,6 +445,21 @@ static GtkWidget *navigation_button(PanelUi *ui, const gchar *icon,
     return button;
 }
 
+/* Queue and Playlists belong to the player, so they are reached from the
+ * player page instead of the navigation bar shared by every page. */
+static GtkWidget *library_button(PanelUi *ui, const gchar *icon,
+                                 const gchar *text, const gchar *page,
+                                 const gchar *title)
+{
+    GtkWidget *button = new_icon_button(
+        icon, text, "library-button", 150, 74, 23,
+        GTK_ORIENTATION_VERTICAL, NULL, NULL);
+    g_object_set_data(G_OBJECT(button), "page", (gpointer)page);
+    g_object_set_data(G_OBJECT(button), "title", (gpointer)title);
+    g_signal_connect(button, "clicked", G_CALLBACK(page_clicked), ui);
+    return button;
+}
+
 static GtkWidget *navigation(PanelUi *ui)
 {
     GtkWidget *navigation_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -454,15 +469,6 @@ static GtkWidget *navigation(PanelUi *ui)
                        navigation_button(ui, "audio-x-generic-symbolic",
                                          "Player", "player", "NOW PLAYING"),
                        FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(navigation_box),
-                       navigation_button(ui, "view-list-details-symbolic",
-                                         "Queue", "queue", "QUEUE"),
-                       FALSE, FALSE, 0);
-    gtk_box_pack_start(
-        GTK_BOX(navigation_box),
-        navigation_button(ui, "view-list-icons-symbolic", "Playlists",
-                          "playlists", "PLAYLISTS"),
-        FALSE, FALSE, 0);
     gtk_box_pack_start(
         GTK_BOX(navigation_box),
         navigation_button(ui, "computer-symbolic", "Room", "room",
@@ -550,8 +556,9 @@ static GtkWidget *player_page(PanelUi *ui)
     gtk_box_pack_start(GTK_BOX(controls), next, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(page), controls, FALSE, FALSE, 0);
 
+    GtkWidget *volume_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_halign(volume_row, GTK_ALIGN_CENTER);
     GtkWidget *volume_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_set_halign(volume_controls, GTK_ALIGN_CENTER);
     add_css_class(volume_controls, "volume-card");
     GtkWidget *down = new_icon_button(
         "audio-volume-low-symbolic", NULL, "volume-button", 86, 62, 28,
@@ -577,7 +584,16 @@ static GtkWidget *player_page(PanelUi *ui)
     gtk_box_pack_start(GTK_BOX(volume_controls), volume_readout,
                        FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(volume_controls), up, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(page), volume_controls, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(volume_row),
+                       library_button(ui, "view-list-details-symbolic",
+                                      "Queue", "queue", "QUEUE"),
+                       FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(volume_row), volume_controls, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(volume_row),
+                       library_button(ui, "view-list-icons-symbolic",
+                                      "Playlists", "playlists", "PLAYLISTS"),
+                       FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(page), volume_row, FALSE, FALSE, 0);
     gtk_box_pack_end(GTK_BOX(page), navigation(ui), FALSE, FALSE, 4);
     return page;
 }
@@ -1334,6 +1350,8 @@ void panel_ui_install_styles(void)
         "progressbar trough{min-height:8px;background:#172235;border-radius:6px}"
         "progressbar progress{min-height:8px;background-image:linear-gradient(to right,#31c8da,#55e4c5);border-radius:6px;box-shadow:0 0 8px rgba(49,200,218,.35)}"
         ".mode-button{font-size:16px;font-weight:700;border-radius:20px;box-shadow:none}"
+        ".library-button{font-size:15px;font-weight:700;border-radius:25px;box-shadow:none;border-color:#2f5a63;color:#8fe6df}"
+        ".library-button:hover{border-color:#43d8d0}"
         ".transport-button{background:#121d2d;border-color:#2a3c55;border-radius:28px;box-shadow:0 7px 18px rgba(0,0,0,.28)}"
         ".play-button{background-image:linear-gradient(to bottom,#5ce4d7,#2fc8d6);color:#061418;border:0;border-radius:36px;box-shadow:0 10px 28px rgba(47,200,214,.32)}"
         ".play-button:hover{background-image:linear-gradient(to bottom,#72eee3,#43d7e2)}"

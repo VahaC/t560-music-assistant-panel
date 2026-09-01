@@ -14,6 +14,8 @@ RESOURCE_FILES = data/icons/light-1.png \
 		 data/icons/desk-lamp.png \
 		 data/icons/desk-led-strip.png
 RESOURCE_SOURCE = build/t560-resources.c
+ICON_NAME = t560-music-panel
+ICON_SIZES = 16 24 32 48 64 128 256 512
 SOURCES = src/main.c \
 	  src/application.c \
 	  src/app_config.c \
@@ -78,5 +80,10 @@ install: t560-panel
 	install -Dm755 scripts/t560-configure-openbox.py "$(DESTDIR)$(PREFIX)/bin/t560-configure-openbox.py"
 	install -Dm644 config/config.ini.example "$(DESTDIR)/etc/t560-music-panel/config.ini.example"
 	install -Dm644 data/t560-music-panel.desktop "$(DESTDIR)$(PREFIX)/share/applications/t560-music-panel.desktop"
+	for size in $(ICON_SIZES); do \
+		install -Dm644 \
+			"data/icons/hicolor/$${size}x$${size}/apps/$(ICON_NAME).png" \
+			"$(DESTDIR)$(PREFIX)/share/icons/hicolor/$${size}x$${size}/apps/$(ICON_NAME).png"; \
+	done
 
 -include $(DEPFILES) $(TEST_DEPFILES)

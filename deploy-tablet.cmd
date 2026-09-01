@@ -17,6 +17,9 @@ set "TABLET_TARGET=%TABLET_USER%@%TABLET_IP%"
 set "REMOTE_HOME=/home/%TABLET_USER%"
 set "REMOTE_BIN=%REMOTE_HOME%/.local/bin"
 set "REMOTE_STATE=%REMOTE_HOME%/.local/state"
+set "REMOTE_APPS=%REMOTE_HOME%/.local/share/applications"
+set "REMOTE_ICONS=%REMOTE_HOME%/.local/share/icons/hicolor"
+set "ICON_SIZES=16 24 32 48 64 128 256 512"
 set /p CHECKSUM_LINE=<"SHA256SUMS"
 set "LOCAL_SHA256=%CHECKSUM_LINE:~0,64%"
 
@@ -72,6 +75,25 @@ call :send_file "scripts\t560-home-button" "%REMOTE_BIN%/t560-home-button.new"
 if errorlevel 1 goto :failure
 call :send_file "scripts\t560-configure-openbox.py" "%REMOTE_BIN%/t560-configure-openbox.py.new"
 if errorlevel 1 goto :failure
+
+echo Deploying the launcher icon and the desktop entries...
+"%SSH_EXE%" "%TABLET_TARGET%" "mkdir -p '%REMOTE_APPS%' '%REMOTE_ICONS%/16x16/apps' '%REMOTE_ICONS%/24x24/apps' '%REMOTE_ICONS%/32x32/apps' '%REMOTE_ICONS%/48x48/apps' '%REMOTE_ICONS%/64x64/apps' '%REMOTE_ICONS%/128x128/apps' '%REMOTE_ICONS%/256x256/apps' '%REMOTE_ICONS%/512x512/apps'"
+if errorlevel 1 goto :icon_warning
+for %%S in (%ICON_SIZES%) do (
+    call :send_file "data\icons\hicolor\%%Sx%%S\apps\t560-music-panel.png" "%REMOTE_ICONS%/%%Sx%%S/apps/t560-music-panel.png"
+    if errorlevel 1 goto :icon_warning
+)
+call :send_file "data\t560-home-assistant.desktop" "%REMOTE_APPS%/t560-home-assistant.desktop"
+if errorlevel 1 goto :icon_warning
+call :send_file "data\t560-music-panel.desktop" "%REMOTE_APPS%/t560-music-panel.desktop"
+if errorlevel 1 goto :icon_warning
+"%SSH_EXE%" "%TABLET_TARGET%" "chmod 644 '%REMOTE_APPS%/t560-home-assistant.desktop' '%REMOTE_APPS%/t560-music-panel.desktop'; if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -f -t '%REMOTE_ICONS%' >/dev/null 2>&1 || true; fi"
+goto :icons_done
+
+:icon_warning
+echo WARNING: The launcher icon was not updated. The panel deployment continues.
+
+:icons_done
 
 echo Validating runtime dependencies...
 "%SSH_EXE%" "%TABLET_TARGET%" "set -eu; chmod 755 '%REMOTE_BIN%/t560-panel.new' '%REMOTE_BIN%/t560-panel-watchdog.new' '%REMOTE_BIN%/t560-open-panel.new' '%REMOTE_BIN%/t560-restart-panel.new' '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-motion-detector.py.new' '%REMOTE_BIN%/t560-home-button.new' '%REMOTE_BIN%/t560-configure-openbox.py.new'; python3 -m py_compile '%REMOTE_BIN%/t560-power-button.py.new' '%REMOTE_BIN%/t560-motion-detector.py.new' '%REMOTE_BIN%/t560-configure-openbox.py.new'; ldd '%REMOTE_BIN%/t560-panel.new' > '%REMOTE_STATE%/t560-deploy-ldd.log' 2>&1; cat '%REMOTE_STATE%/t560-deploy-ldd.log'; if grep -q 'not found' '%REMOTE_STATE%/t560-deploy-ldd.log'; then echo 'ERROR: A runtime dependency is missing.' >&2; exit 1; fi"
