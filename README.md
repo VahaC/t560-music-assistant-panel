@@ -34,6 +34,12 @@ or an on-screen keyboard. All settings are edited over SSH.
   pointer grab while the display is off, so no control is pressed by mistake.
 - The display turns off automatically after a configurable inactivity timeout
   (`screen_off_seconds`, 30 seconds by default).
+- Camera motion detection: movement turns the display on while it is off, and
+  postpones the automatic screen off while it continues. It is off by default
+  because the built-in camera of this tablet cannot stream to userspace; see
+  [CAMERA.md](docs/CAMERA.md).
+- Camera analysis runs in a separate low-priority daemon, never in the panel
+  process, and the panel keeps working when no camera node is usable.
 - The physical Home button toggles between the panel and desktop while the
   display is on, and only wakes the display while it is off.
 - The existing long-press Power menu is retained.
@@ -76,6 +82,11 @@ The application is split into focused C modules with explicit interfaces:
   `/sys/class/power_supply`;
 - `main` is the minimal process entry point.
 
+Two Python helpers run beside the application. `t560-power-button.py` owns
+DPMS: it handles the Power and Home buttons, the inactivity timeout, and the
+motion events. `t560-motion-detector.py` captures camera frames and reports
+motion to that handler with `SIGUSR2`.
+
 The Makefile tracks header dependencies automatically. Run `make test` for the
 unit tests and `make` for the application.
 
@@ -100,11 +111,12 @@ existing SSH connection without requiring SCP, SFTP, or administrative access.
 ## Openbox autostart
 
 The ready-to-use [t560-openbox-autostart](openbox/t560-openbox-autostart)
-starts Tint2, the cursor helper, and the included Power button handler. A short
-Power press turns the display off, while any key or touchscreen input wakes it.
-The same handler makes Home screen-aware and retains the existing long-press
-Power menu. The autostart does not start Badwolf, WebKit, or Matchbox Keyboard.
-Back up the current autostart file before replacing it.
+starts Tint2, the cursor helper, the included Power button handler, and the
+camera motion detector. A short Power press turns the display off, while any
+key, touchscreen input, or detected motion wakes it. The same handler makes
+Home screen-aware and retains the existing long-press Power menu. The autostart
+does not start Badwolf, WebKit, or Matchbox Keyboard. Back up the current
+autostart file before replacing it.
 
 The first-installation procedure transfers the provided file as a candidate,
 backs up the current Openbox autostart, tests the panel, and activates the new
@@ -117,10 +129,25 @@ The [APKBUILD](packaging/APKBUILD) limits the package to `armv7`. APK packaging
 is optional and is not the recommended installation method on the current
 tablet because it requires intentionally configured administrative access.
 
-## Camera extension
+## Camera motion detection
 
-The future motion-detection architecture is documented in
-[CAMERA.md](docs/CAMERA.md). A realistic first stage on this CPU is V4L2 capture
-at 320x240 and 2-5 FPS with a lightweight frame-difference daemon. Object
-recognition should run on a more powerful LAN server after the tablet detects
-motion.
+`t560-motion-detector.py` captures the front camera through V4L2 at 320x240 and
+2.5 FPS by default, compares consecutive frames as a 16x12 grid of block
+averages, and reports confirmed motion to the button handler. A frame-wide
+brightness change, such as a room light or the backlight itself, is subtracted
+before the comparison and does not count as motion. The daemon needs only the
+Python standard library and no OpenCV or neural-network runtime.
+
+Every setting lives in the `[camera]` section of `config.ini`.
+`motion_detection` is `off` by default: the `/dev/video0` DCAM shim of the
+SM-T560 rejects `VIDIOC_REQBUFS`, so no application can capture frames from
+the built-in sensor under the 3.10.17 kernel. `t560-motion-detector.py
+--probe` reports each node and the exact call at which capture stops, and the
+feature works as soon as a camera answers it with `capture works`, for example
+a USB camera on the OTG port.
+
+The measured driver behaviour, the architecture, and the tuning notes are
+documented in [CAMERA.md](docs/CAMERA.md), and the kernel and root filesystem
+changes that would make the built-in camera usable are listed in
+[CAMERA_FIRMWARE.md](docs/CAMERA_FIRMWARE.md). Object recognition should still run
+on a more powerful LAN server after the tablet detects motion.

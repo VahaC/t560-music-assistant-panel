@@ -73,6 +73,7 @@ install: t560-panel
 	install -Dm755 scripts/t560-open-panel "$(DESTDIR)$(PREFIX)/bin/t560-open-panel"
 	install -Dm755 scripts/t560-restart-panel "$(DESTDIR)$(PREFIX)/bin/t560-restart-panel"
 	install -Dm755 scripts/t560-power-button.py "$(DESTDIR)$(PREFIX)/bin/t560-power-button.py"
+	install -Dm755 scripts/t560-motion-detector.py "$(DESTDIR)$(PREFIX)/bin/t560-motion-detector.py"
 	install -Dm755 scripts/t560-home-button "$(DESTDIR)$(PREFIX)/bin/t560-home-button"
 	install -Dm755 scripts/t560-configure-openbox.py "$(DESTDIR)$(PREFIX)/bin/t560-configure-openbox.py"
 	install -Dm644 config/config.ini.example "$(DESTDIR)/etc/t560-music-panel/config.ini.example"

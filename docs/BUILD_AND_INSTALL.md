@@ -39,6 +39,7 @@ Installed files:
 /home/vahac/.local/bin/t560-open-panel
 /home/vahac/.local/bin/t560-restart-panel
 /home/vahac/.local/bin/t560-power-button.py
+/home/vahac/.local/bin/t560-motion-detector.py
 /home/vahac/.local/bin/t560-home-button
 /home/vahac/.local/bin/t560-configure-openbox.py
 /home/vahac/.config/t560-music-panel/config.ini
@@ -139,6 +140,7 @@ Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-wa
 Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel
 Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel
 Send-T560File .\scripts\t560-power-button.py /home/vahac/.local/bin/t560-power-button.py
+Send-T560File .\scripts\t560-motion-detector.py /home/vahac/.local/bin/t560-motion-detector.py
 Send-T560File .\scripts\t560-home-button /home/vahac/.local/bin/t560-home-button
 Send-T560File .\scripts\t560-configure-openbox.py /home/vahac/.local/bin/t560-configure-openbox.py
 Send-T560File .\config\config.ini.example /home/vahac/.config/t560-music-panel/config.ini.example
@@ -150,7 +152,7 @@ Create the initial configuration without overwriting an existing one, and set
 permissions:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560-panel-watchdog ~/.local/bin/t560-open-panel ~/.local/bin/t560-restart-panel ~/.local/bin/t560-power-button.py ~/.local/bin/t560-home-button ~/.local/bin/t560-configure-openbox.py ~/.config/openbox/autostart.t560-new; python3 -m py_compile ~/.local/bin/t560-power-button.py ~/.local/bin/t560-configure-openbox.py; chmod 700 ~/.config/t560-music-panel; if test ! -f ~/.config/t560-music-panel/config.ini; then cp ~/.config/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini; fi; chmod 600 ~/.config/t560-music-panel/config.ini; mv ~/.local/share/applications/t560-home-assistant.desktop.new ~/.local/share/applications/t560-home-assistant.desktop; chmod 644 ~/.local/share/applications/t560-home-assistant.desktop; ls -l ~/.local/bin/t560-*'
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel ~/.local/bin/t560-panel-watchdog ~/.local/bin/t560-open-panel ~/.local/bin/t560-restart-panel ~/.local/bin/t560-power-button.py ~/.local/bin/t560-motion-detector.py ~/.local/bin/t560-home-button ~/.local/bin/t560-configure-openbox.py ~/.config/openbox/autostart.t560-new; python3 -m py_compile ~/.local/bin/t560-power-button.py ~/.local/bin/t560-motion-detector.py ~/.local/bin/t560-configure-openbox.py; chmod 700 ~/.config/t560-music-panel; if test ! -f ~/.config/t560-music-panel/config.ini; then cp ~/.config/t560-music-panel/config.ini.example ~/.config/t560-music-panel/config.ini; fi; chmod 600 ~/.config/t560-music-panel/config.ini; mv ~/.local/share/applications/t560-home-assistant.desktop.new ~/.local/share/applications/t560-home-assistant.desktop; chmod 644 ~/.local/share/applications/t560-home-assistant.desktop; ls -l ~/.local/bin/t560-*'
 ```
 
 ## 4. Verify runtime libraries
@@ -267,6 +269,8 @@ export GTK_THEME=Adwaita:dark
 openbox --reconfigure
 nohup python3 "$HOME/.local/bin/t560-power-button.py" \
   >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
+nohup python3 "$HOME/.local/bin/t560-motion-detector.py" \
+  >>"$HOME/.local/state/motion-detector.log" 2>&1 </dev/null &
 
 nohup "$HOME/.local/bin/t560-panel" \
   >"$HOME/.local/state/t560-music-panel.log" 2>&1 \
@@ -304,6 +308,25 @@ Verify on the touchscreen:
 14. If the display is off, Home wakes it without toggling the panel.
 15. The display turns off on its own after `screen_off_seconds` without input,
     and any touch wakes it again.
+16. With `motion_detection=on`, walking in front of the tablet while the
+    display is off turns it on, and the display stays on while the movement
+    continues. The camera log records both:
+
+```text
+motion: detected
+```
+
+```text
+motion: backlight on
+```
+
+17. Pressing Power to turn the display off does not wake it again while
+    `motion_wake_grace_seconds` has not elapsed.
+
+Items 16 and 17 apply only to a tablet with a usable camera. The built-in
+camera of the SM-T560 is not usable and `motion_detection` is `off` by
+default, so the daemon logs one line and exits; every other feature keeps
+working. Confirm the camera state with `t560-motion-detector.py --probe`.
 
 Do not enable autostart until this test passes.
 
@@ -392,6 +415,7 @@ Send-T560File .\scripts\t560-panel-watchdog /home/vahac/.local/bin/t560-panel-wa
 Send-T560File .\scripts\t560-open-panel /home/vahac/.local/bin/t560-open-panel.new
 Send-T560File .\scripts\t560-restart-panel /home/vahac/.local/bin/t560-restart-panel.new
 Send-T560File .\scripts\t560-power-button.py /home/vahac/.local/bin/t560-power-button.py.new
+Send-T560File .\scripts\t560-motion-detector.py /home/vahac/.local/bin/t560-motion-detector.py.new
 Send-T560File .\scripts\t560-home-button /home/vahac/.local/bin/t560-home-button.new
 Send-T560File .\scripts\t560-configure-openbox.py /home/vahac/.local/bin/t560-configure-openbox.py.new
 ```
@@ -403,7 +427,7 @@ Do not transfer `config.ini` or `token` during an update.
 Run:
 
 ```powershell
-ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel.new ~/.local/bin/t560-panel-watchdog.new ~/.local/bin/t560-open-panel.new ~/.local/bin/t560-restart-panel.new ~/.local/bin/t560-power-button.py.new ~/.local/bin/t560-home-button.new ~/.local/bin/t560-configure-openbox.py.new; python3 -m py_compile ~/.local/bin/t560-power-button.py.new ~/.local/bin/t560-configure-openbox.py.new; ldd ~/.local/bin/t560-panel.new 2>&1'
+ssh.exe "vahac@${TabletIp}" 'chmod 755 ~/.local/bin/t560-panel.new ~/.local/bin/t560-panel-watchdog.new ~/.local/bin/t560-open-panel.new ~/.local/bin/t560-restart-panel.new ~/.local/bin/t560-power-button.py.new ~/.local/bin/t560-motion-detector.py.new ~/.local/bin/t560-home-button.new ~/.local/bin/t560-configure-openbox.py.new; python3 -m py_compile ~/.local/bin/t560-power-button.py.new ~/.local/bin/t560-motion-detector.py.new ~/.local/bin/t560-configure-openbox.py.new; ldd ~/.local/bin/t560-panel.new 2>&1'
 ```
 
 Stop if any dependency is reported as `not found`.
@@ -422,6 +446,7 @@ Stop the watchdog and application:
 pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
 pkill -x t560-panel 2>/dev/null || true
 pkill -f '[t]560-power-button.py' 2>/dev/null || true
+pkill -f '[t]560-motion-detector.py' 2>/dev/null || true
 ```
 
 Keep one rollback copy and activate the new files:
@@ -437,6 +462,10 @@ cp "$HOME/.local/bin/t560-restart-panel" \
    "$HOME/.local/bin/t560-restart-panel.previous"
 cp "$HOME/.local/bin/t560-power-button.py" \
    "$HOME/.local/bin/t560-power-button.py.previous"
+if [ -f "$HOME/.local/bin/t560-motion-detector.py" ]; then
+    cp "$HOME/.local/bin/t560-motion-detector.py" \
+       "$HOME/.local/bin/t560-motion-detector.py.previous"
+fi
 if [ -f "$HOME/.local/bin/t560-home-button" ]; then
     cp "$HOME/.local/bin/t560-home-button" \
        "$HOME/.local/bin/t560-home-button.previous"
@@ -458,6 +487,8 @@ mv "$HOME/.local/bin/t560-restart-panel.new" \
    "$HOME/.local/bin/t560-restart-panel"
 mv "$HOME/.local/bin/t560-power-button.py.new" \
    "$HOME/.local/bin/t560-power-button.py"
+mv "$HOME/.local/bin/t560-motion-detector.py.new" \
+   "$HOME/.local/bin/t560-motion-detector.py"
 mv "$HOME/.local/bin/t560-home-button.new" \
    "$HOME/.local/bin/t560-home-button"
 mv "$HOME/.local/bin/t560-configure-openbox.py.new" \
@@ -468,6 +499,7 @@ chmod 755 "$HOME/.local/bin/t560-panel" \
           "$HOME/.local/bin/t560-open-panel" \
           "$HOME/.local/bin/t560-restart-panel" \
           "$HOME/.local/bin/t560-power-button.py" \
+          "$HOME/.local/bin/t560-motion-detector.py" \
           "$HOME/.local/bin/t560-home-button" \
           "$HOME/.local/bin/t560-configure-openbox.py"
 
@@ -484,12 +516,16 @@ nohup "$HOME/.local/bin/t560-panel-watchdog" \
   >/dev/null 2>&1 </dev/null &
 nohup python3 "$HOME/.local/bin/t560-power-button.py" \
   >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
+nohup python3 "$HOME/.local/bin/t560-motion-detector.py" \
+  >>"$HOME/.local/state/motion-detector.log" 2>&1 </dev/null &
 
 sleep 3
 ps | grep '[t]560-panel'
 ps | grep '[t]560-power-button.py'
+ps | grep '[t]560-motion-detector.py'
 tail -n 100 "$HOME/.local/state/t560-music-panel.log"
 tail -n 20 "$HOME/.local/state/power-button.log"
+tail -n 20 "$HOME/.local/state/motion-detector.log"
 ```
 
 Verify the main player page and at least one Home Assistant action on the
@@ -514,6 +550,7 @@ If the new version fails:
 pkill -f '[t]560-panel-watchdog' 2>/dev/null || true
 pkill -x t560-panel 2>/dev/null || true
 pkill -f '[t]560-power-button.py' 2>/dev/null || true
+pkill -f '[t]560-motion-detector.py' 2>/dev/null || true
 
 mv "$HOME/.local/bin/t560-panel.previous" \
    "$HOME/.local/bin/t560-panel"
@@ -525,6 +562,10 @@ mv "$HOME/.local/bin/t560-restart-panel.previous" \
    "$HOME/.local/bin/t560-restart-panel"
 mv "$HOME/.local/bin/t560-power-button.py.previous" \
    "$HOME/.local/bin/t560-power-button.py"
+if [ -f "$HOME/.local/bin/t560-motion-detector.py.previous" ]; then
+    mv "$HOME/.local/bin/t560-motion-detector.py.previous" \
+       "$HOME/.local/bin/t560-motion-detector.py"
+fi
 if [ -f "$HOME/.local/bin/t560-home-button.previous" ]; then
     mv "$HOME/.local/bin/t560-home-button.previous" \
        "$HOME/.local/bin/t560-home-button"
@@ -579,6 +620,75 @@ nohup python3 "$HOME/.local/bin/t560-power-button.py" \
   >>"$HOME/.local/state/power-button.log" 2>&1 </dev/null &
 ```
 
+The `[camera]` section is read by the motion detector at start-up, except for
+`motion_wake_grace_seconds`, which the button handler above reads. Restart the
+detector after changing any camera key:
+
+```sh
+pkill -f '[t]560-motion-detector.py'
+nohup python3 "$HOME/.local/bin/t560-motion-detector.py" \
+  >>"$HOME/.local/state/motion-detector.log" 2>&1 </dev/null &
+```
+
+# Camera motion detection
+
+An update does not replace an existing `config.ini`, and a configuration
+without a `[camera]` section keeps the documented defaults: detection is on
+and the node is probed automatically. Copy the section from
+[config.ini.example](../config/config.ini.example) into the tablet
+configuration only when a value has to be changed:
+
+```sh
+nano "$HOME/.config/t560-music-panel/config.ini"
+```
+
+Detection is `off` by default. The built-in camera of this tablet cannot be
+used: `/dev/video0` is a Spreadtrum DCAM shim that rejects `VIDIOC_REQBUFS`,
+so no application can capture frames from it. The measurement is recorded in
+[CAMERA.md](CAMERA.md).
+
+Check any camera, including one attached later, with the built-in probe. It
+needs no administrative access and works while detection is off:
+
+```sh
+python3 "$HOME/.local/bin/t560-motion-detector.py" --probe
+```
+
+The probe prints the driver, the pixel formats, and the exact V4L2 call at
+which capture stops. On this tablet it ends with:
+
+```text
+capture setup stops here: REQBUFS failed: Not a tty
+```
+
+A usable camera ends with `capture works` instead. Set `motion_detection=on`
+then, and write its node into `device=` when several nodes accept capture. The
+start-up line of the log names the node, the driver, and the negotiated
+format:
+
+```text
+camera: /dev/video0 [USB Camera] GREY 320x240 stride 320
+```
+
+Tuning:
+
+- False events from sensor noise: raise `pixel_threshold`, `motion_frames`,
+  or `motion_area_percent`.
+- Movement is missed: lower `motion_area_percent`, or lower
+  `frame_interval_ms` so that faster movement is still compared frame by
+  frame.
+- CPU use is too high: raise `frame_interval_ms`, or lower `width` and
+  `height`.
+- The display must never turn off while somebody is in the room: keep
+  `motion_detection=on` and leave `screen_off_seconds` at its normal value,
+  because detected motion postpones the automatic screen off.
+
+Measure the cost on the tablet before declaring the settings final:
+
+```sh
+top -n 1 | grep '[t]560-motion-detector'
+```
+
 # Logs and diagnostics
 
 Application log:
@@ -587,10 +697,18 @@ Application log:
 /home/vahac/.local/state/t560-music-panel.log
 ```
 
-Follow it over SSH:
+Button handler and camera logs:
+
+```text
+/home/vahac/.local/state/power-button.log
+/home/vahac/.local/state/motion-detector.log
+```
+
+Follow them over SSH:
 
 ```sh
 tail -f "$HOME/.local/state/t560-music-panel.log"
+tail -f "$HOME/.local/state/motion-detector.log"
 ```
 
 Common conditions:
@@ -601,6 +719,10 @@ Common conditions:
 - `cannot open display`: confirm `DISPLAY=:0` and the X session owner.
 - `not found` in `ldd`: the corresponding shared library is genuinely missing.
 - immediate watchdog restart loop: inspect the log before restarting again.
+- `no usable camera; motion detection stops`: no `/dev/video*` node accepted a
+  supported format. The display then behaves exactly as before TB-6.
+- `the Power button handler is not running`: motion was detected but nothing
+  owns DPMS. Start `t560-power-button.py` again.
 
 # Restore the previous Badwolf autostart
 

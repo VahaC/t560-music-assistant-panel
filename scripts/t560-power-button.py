@@ -1,6 +1,11 @@
 #!/usr/bin/python3
 
-"""Handle the physical Power and Home buttons without blocking the GTK app."""
+"""Handle the physical Power and Home buttons without blocking the GTK app.
+
+The handler also owns DPMS for the motion detector: SIGUSR2 from
+t560-motion-detector.py turns the display on and postpones the automatic
+screen off while the camera keeps seeing movement.
+"""
 
 import configparser
 import ctypes
@@ -28,6 +33,7 @@ XK_HOME = 0xFF50
 XF86_HOME_PAGE = 0x1008FF18
 DPMS_MODE_ON = 0
 DPMS_MODE_OFF = 3
+SCREEN_SAVER_RESET = 0
 LONG_PRESS_SECONDS = 1.5
 POLL_SECONDS = 0.5
 TOUCH_GRAB_SECONDS = 3.0
@@ -35,6 +41,13 @@ CONFIG_FILE = "~/.config/t560-music-panel/config.ini"
 DEFAULT_SCREEN_OFF_SECONDS = 30
 MIN_SCREEN_OFF_SECONDS = 5
 MAX_SCREEN_OFF_SECONDS = 3600
+DEFAULT_MOTION_WAKE_GRACE_SECONDS = 30
+MIN_MOTION_WAKE_GRACE_SECONDS = 0
+MAX_MOTION_WAKE_GRACE_SECONDS = 600
+# The backlight itself changes what the camera sees. Motion is ignored for
+# this long after an automatic screen off so that the transition alone cannot
+# turn the display back on.
+MOTION_SETTLE_SECONDS = 2.0
 
 
 class XKeyEvent(ctypes.Structure):
@@ -84,6 +97,8 @@ root = 0
 idle_info = None
 pointer_grabbed = False
 grab_failure = None
+display_off_at = 0.0
+display_off_manual = True
 
 
 def log(message):
@@ -112,6 +127,36 @@ def screen_off_seconds(path=CONFIG_FILE):
     if seconds <= 0:
         return 0
     return min(max(seconds, MIN_SCREEN_OFF_SECONDS), MAX_SCREEN_OFF_SECONDS)
+
+
+def motion_wake_grace_seconds(path=CONFIG_FILE):
+    """Return how long motion is ignored after a deliberate screen off.
+
+    Without the delay, the person who just pressed Power would immediately be
+    detected by the motion daemon and would turn the display back on.
+    """
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(os.path.expanduser(path), encoding="utf-8")
+    except (OSError, UnicodeDecodeError, configparser.Error) as error:
+        log(f"WARNING: could not read {path}: {error}")
+        return DEFAULT_MOTION_WAKE_GRACE_SECONDS
+
+    value = parser.get("camera", "motion_wake_grace_seconds", fallback=None)
+    if value is None:
+        return DEFAULT_MOTION_WAKE_GRACE_SECONDS
+
+    try:
+        seconds = int(value.strip())
+    except ValueError:
+        log("WARNING: motion_wake_grace_seconds is not an integer: "
+            f"{value.strip()!r}")
+        return DEFAULT_MOTION_WAKE_GRACE_SECONDS
+
+    return min(
+        max(seconds, MIN_MOTION_WAKE_GRACE_SECONDS),
+        MAX_MOTION_WAKE_GRACE_SECONDS,
+    )
 
 
 def load_x_libraries():
@@ -155,6 +200,7 @@ def load_x_libraries():
     x11.XNextEvent.argtypes = [ctypes.c_void_p, ctypes.POINTER(XEvent)]
     x11.XConnectionNumber.argtypes = [ctypes.c_void_p]
     x11.XConnectionNumber.restype = ctypes.c_int
+    x11.XForceScreenSaver.argtypes = [ctypes.c_void_p, ctypes.c_int]
     x11.XFlush.argtypes = [ctypes.c_void_p]
 
     xext.DPMSEnable.argtypes = [ctypes.c_void_p]
@@ -212,6 +258,16 @@ def idle_seconds():
     if not xss.XScreenSaverQueryInfo(display, root, idle_info):
         return 0.0
     return idle_info.contents.idle / 1000.0
+
+
+def reset_idle_timer():
+    """Restart the X server inactivity countdown.
+
+    Without libXss the server applies the screen-off timeout itself, so
+    camera motion can only postpone it by resetting the server idle counter.
+    """
+    x11.XForceScreenSaver(display, SCREEN_SAVER_RESET)
+    x11.XFlush(display)
 
 
 def dpms_level():
@@ -277,10 +333,24 @@ def wake_display():
     ungrab_pointer()
 
 
-def blank_display():
+def note_display_off(manual):
+    """Remember when and why the backlight turned off, for the motion wake."""
+    global display_off_at, display_off_manual
+
+    display_off_at = time.monotonic()
+    display_off_manual = manual
+
+
+def motion_wake_delay(manual_grace):
+    """Return how long motion stays ignored after the current screen off."""
+    return manual_grace if display_off_manual else MOTION_SETTLE_SECONDS
+
+
+def blank_display(manual=False):
     """Swallow the wake-up tap, then turn the backlight off."""
     grab_pointer()
     force_dpms(DPMS_MODE_OFF)
+    note_display_off(manual)
 
 
 def run_xset(arguments):
@@ -328,6 +398,7 @@ def main():
             run_xset(["-r", str(home_keycode)])
 
     auto_off_seconds = screen_off_seconds()
+    motion_grace = motion_wake_grace_seconds()
     idle_detection = auto_off_seconds > 0 and enable_idle_detection()
 
     # This handler drives DPMS itself whenever the idle timer is readable.
@@ -350,6 +421,10 @@ def main():
     monitor_on = dpms_level() == DPMS_MODE_ON
     if not monitor_on:
         grab_pointer()
+        note_display_off(manual=True)
+    last_motion = None
+    motion_hold = False
+    grace_logged_at = None
     pressed = False
     press_started = 0.0
     woke_from_off = False
@@ -364,6 +439,8 @@ def main():
     os.set_blocking(signal_write, False)
     signal.set_wakeup_fd(signal_write)
     signal.signal(signal.SIGUSR1, lambda _signum, _frame: None)
+    # The camera daemon reports motion with SIGUSR2.
+    signal.signal(signal.SIGUSR2, lambda _signum, _frame: None)
 
     if auto_off_seconds == 0:
         auto_off_state = "disabled"
@@ -373,7 +450,8 @@ def main():
         auto_off_state = f"{auto_off_seconds}s X server timeout"
     log(
         f"started: keycode={keycode}, monitor_on={monitor_on}, "
-        f"auto screen off={auto_off_state}"
+        f"auto screen off={auto_off_state}, "
+        f"motion wake grace={motion_grace}s"
     )
 
     while True:
@@ -386,17 +464,41 @@ def main():
 
         if signal_read in readable:
             try:
-                home_requests = os.read(signal_read, 4096).count(signal.SIGUSR1)
+                pending = os.read(signal_read, 4096)
             except BlockingIOError:
-                home_requests = 0
+                pending = b""
 
-            for _ in range(home_requests):
+            for _ in range(pending.count(signal.SIGUSR1)):
                 if monitor_on:
                     toggle_desktop()
                 else:
                     wake_display()
                     monitor_on = True
                     log("home: woke display without toggling desktop")
+
+            if pending.count(signal.SIGUSR2):
+                # Motion counts as activity: it wakes the display and, while
+                # it continues, postpones the automatic screen off below.
+                now = time.monotonic()
+                last_motion = now
+                if monitor_on:
+                    if not idle_detection:
+                        reset_idle_timer()
+                else:
+                    if now - display_off_at >= motion_wake_delay(motion_grace):
+                        wake_display()
+                        if not idle_detection:
+                            # The server timeout has already elapsed; without
+                            # this reset it would blank the display again at
+                            # once.
+                            reset_idle_timer()
+                        monitor_on = True
+                        log("motion: backlight on")
+                    elif grace_logged_at != display_off_at:
+                        grace_logged_at = display_off_at
+                        log("motion: ignored for "
+                            f"{motion_wake_delay(motion_grace):.0f}s after "
+                            "the backlight turned off")
 
         while x11.XPending(display):
             x11.XNextEvent(display, ctypes.byref(event))
@@ -422,7 +524,7 @@ def main():
                             monitor_on = True
                             log(f"short release ({duration:.2f}s): backlight on")
                         else:
-                            blank_display()
+                            blank_display(manual=True)
                             monitor_on = False
                             log(f"short release ({duration:.2f}s): backlight off")
                     else:
@@ -468,11 +570,22 @@ def main():
                             wake_touch_started = now
                         log("wake: input turned backlight on")
                     else:
+                        note_display_off(manual=True)
                         log("backlight turned off externally")
 
                 if monitor_on and idle_detection:
                     idle = idle_seconds()
-                    if idle >= auto_off_seconds:
+                    motion_recent = (last_motion is not None
+                                     and now - last_motion < auto_off_seconds)
+                    if idle < auto_off_seconds:
+                        motion_hold = False
+                    elif motion_recent:
+                        if not motion_hold:
+                            motion_hold = True
+                            log(f"idle {idle:.1f}s: screen off postponed "
+                                "while there is motion")
+                    else:
+                        motion_hold = False
                         blank_display()
                         monitor_on = False
                         log(f"idle {idle:.1f}s: backlight off")
