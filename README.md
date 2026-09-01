@@ -19,6 +19,12 @@ or an on-screen keyboard. All settings are edited over SSH.
   with the charge percentage.
 - The battery indicator turns green and shows a bolt while the tablet is
   charging, and amber or red as the charge drops.
+- The link icon reports only whether Home Assistant answers. It is teal and
+  whole while every configured entity is read, amber and whole when Home
+  Assistant replies but rejects a request, and red and broken only when the
+  server cannot be reached at all. A wrong entity ID in `config.ini` is
+  therefore reported as amber, never as a lost connection. Hold the icon to
+  read a tooltip naming the entity that Home Assistant rejected.
 - Album art, track title, artist, playback progress, and volume.
 - Previous, Play/Pause, Next, Volume Down, and Volume Up controls.
 - Shuffle and Repeat Off/All/One controls.

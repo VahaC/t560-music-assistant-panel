@@ -24,6 +24,18 @@ typedef enum {
 typedef void (*PanelUiEventHandler)(PanelUiEvent event, const gchar *value,
                                     gint index, gpointer user_data);
 
+/* The connection icon reports whether Home Assistant answers, and nothing
+ * else. Any HTTP reply proves the link is up, so a rejected entity ID or a
+ * refused token is a warning about the configuration, never a lost
+ * connection. Ordered from least to most severe; a poll cycle reports the
+ * worst state it observed. */
+typedef enum {
+    PANEL_UI_STATUS_CONNECTED,
+    PANEL_UI_STATUS_CONNECTING,
+    PANEL_UI_STATUS_WARNING,
+    PANEL_UI_STATUS_OFFLINE
+} PanelUiStatus;
+
 PanelUi *panel_ui_new(const AppConfig *config, PanelUiEventHandler handler,
                       gpointer user_data);
 void panel_ui_free(PanelUi *ui);
@@ -31,7 +43,8 @@ GtkWidget *panel_ui_build(PanelUi *ui);
 GtkWidget *panel_ui_build_config_error(const gchar *message);
 void panel_ui_install_styles(void);
 
-void panel_ui_set_status(PanelUi *ui, const gchar *text, gboolean is_error);
+void panel_ui_set_status(PanelUi *ui, const gchar *text,
+                         PanelUiStatus status);
 void panel_ui_set_clock(PanelUi *ui, const gchar *time_text,
                         const gchar *date_text);
 void panel_ui_set_battery(PanelUi *ui, gboolean available, gint percent,

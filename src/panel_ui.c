@@ -1,18 +1,12 @@
 #include "panel_ui.h"
 
-typedef enum {
-    PANEL_STATUS_CONNECTING,
-    PANEL_STATUS_CONNECTED,
-    PANEL_STATUS_ERROR
-} PanelStatusState;
-
 struct _PanelUi {
     const AppConfig *config;
     PanelUiEventHandler event_handler;
     gpointer event_user_data;
     GtkWidget *stack;
     GtkWidget *status;
-    PanelStatusState status_state;
+    PanelUiStatus status_state;
     GtkWidget *clock_time;
     GtkWidget *clock_date;
     GtkWidget *battery_box;
@@ -1108,17 +1102,22 @@ static void rounded_rectangle(cairo_t *cr, gdouble x, gdouble y, gdouble width,
 }
 
 /* A chain link, not a signal strength icon: the state describes the Home
- * Assistant connection and must not be mistaken for the Wi-Fi indicator. */
+ * Assistant connection and must not be mistaken for the Wi-Fi indicator.
+ * Only an unreachable Home Assistant breaks the link. A misconfigured entity
+ * keeps the link whole and turns it amber, because the panel did reach the
+ * server. */
 static gboolean status_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
     PanelUi *ui = user_data;
     gdouble center_x = gtk_widget_get_allocated_width(widget) / 2.0;
     gdouble center_y = gtk_widget_get_allocated_height(widget) / 2.0;
-    gboolean broken = ui->status_state == PANEL_STATUS_ERROR;
+    gboolean broken = ui->status_state == PANEL_UI_STATUS_OFFLINE;
     gdouble gap = broken ? 3.5 : 0.0;
     guint color = PANEL_COLOR_ACCENT;
 
-    if (ui->status_state == PANEL_STATUS_CONNECTING)
+    if (ui->status_state == PANEL_UI_STATUS_CONNECTING)
+        color = PANEL_COLOR_OUTLINE;
+    else if (ui->status_state == PANEL_UI_STATUS_WARNING)
         color = PANEL_COLOR_WARNING;
     else if (broken)
         color = PANEL_COLOR_ALERT;
@@ -1209,7 +1208,7 @@ static GtkWidget *build_clock(PanelUi *ui)
 
 static GtkWidget *build_status(PanelUi *ui)
 {
-    ui->status_state = PANEL_STATUS_CONNECTING;
+    ui->status_state = PANEL_UI_STATUS_CONNECTING;
     ui->status = gtk_drawing_area_new();
     gtk_widget_set_size_request(ui->status, 30, 30);
     gtk_widget_set_valign(ui->status, GTK_ALIGN_CENTER);
@@ -1390,13 +1389,18 @@ void panel_ui_install_styles(void)
     install_css(room_sheet_css);
 }
 
-void panel_ui_set_status(PanelUi *ui, const gchar *text, gboolean is_error)
+void panel_ui_set_status(PanelUi *ui, const gchar *text,
+                         PanelUiStatus status)
 {
-    ui->status_state = is_error ? PANEL_STATUS_ERROR : PANEL_STATUS_CONNECTED;
+    gboolean changed = ui->status_state != status;
+
+    ui->status_state = status;
     /* The icon replaces the former status text, so the message is preserved
-     * as a tooltip for diagnostics. */
+     * as a tooltip for diagnostics. It names the rejected entity when the
+     * configuration is at fault. */
     gtk_widget_set_tooltip_text(ui->status, text);
-    gtk_widget_queue_draw(ui->status);
+    if (changed)
+        gtk_widget_queue_draw(ui->status);
 }
 
 void panel_ui_set_clock(PanelUi *ui, const gchar *time_text,

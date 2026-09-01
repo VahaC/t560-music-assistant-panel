@@ -34,7 +34,8 @@ typedef struct {
     gint64 next_playlist_poll_us;
     gint queue_selected;
     gint playlist_selected;
-    gboolean poll_failed;
+    PanelUiStatus poll_status;
+    gchar *poll_message;
     gboolean player_playing;
     gboolean shuffle_state;
 } PanelApplication;
@@ -55,9 +56,37 @@ typedef struct {
     PanelApplication *application;
     PollRequestKind kind;
     guint index;
+    /* Owned by AppConfig, which outlives every request it started. */
+    const gchar *entity;
 } PollRequest;
 
 static gboolean poll_states(gpointer user_data);
+
+/* A poll cycle fans out one request per configured entity, so the icon has to
+ * describe the whole cycle. The worst state seen is remembered here and
+ * applied once every request has finished, which stops a single rejected
+ * entity from overwriting the state reported by the healthy ones.
+ * Takes ownership of message. */
+static void note_poll_status(PanelApplication *application,
+                             PanelUiStatus status, gchar *message)
+{
+    if (status <= application->poll_status) {
+        g_free(message);
+        return;
+    }
+    application->poll_status = status;
+    g_free(application->poll_message);
+    application->poll_message = message;
+}
+
+static void apply_poll_status(PanelApplication *application)
+{
+    panel_ui_set_status(application->ui,
+                        application->poll_message != NULL
+                            ? application->poll_message
+                            : "Connected",
+                        application->poll_status);
+}
 
 static gboolean file_is_panel_config(GFile *file)
 {
@@ -78,7 +107,8 @@ static gboolean reload_config(gpointer user_data)
     application->config_reload_source = 0;
     if (updated == NULL) {
         gchar *message = g_strdup_printf("Config reload failed: %s", failure);
-        panel_ui_set_status(application->ui, message, TRUE);
+        panel_ui_set_status(application->ui, message,
+                            PANEL_UI_STATUS_WARNING);
         g_warning("%s", message);
         g_free(message);
         g_free(failure);
@@ -86,7 +116,8 @@ static gboolean reload_config(gpointer user_data)
     }
 
     app_config_free(updated);
-    panel_ui_set_status(application->ui, "Applying configuration", FALSE);
+    panel_ui_set_status(application->ui, "Applying configuration",
+                        PANEL_UI_STATUS_CONNECTED);
     g_application_quit(G_APPLICATION(application->gtk_application));
     return G_SOURCE_REMOVE;
 }
@@ -178,14 +209,20 @@ static void service_finished(guint status_code, GBytes *body,
 
     if (error != NULL) {
         gchar *message = g_strdup_printf("Command failed: %s", error->message);
-        panel_ui_set_status(application->ui, message, TRUE);
+        panel_ui_set_status(application->ui, message,
+                            PANEL_UI_STATUS_OFFLINE);
         g_free(message);
     } else if (status_code < 200 || status_code >= 300) {
-        gchar *message = g_strdup_printf("Command HTTP %u", status_code);
-        panel_ui_set_status(application->ui, message, TRUE);
+        /* Home Assistant answered, so the link is up. A refused command is a
+         * wrong entity or service in config.ini, not a lost connection. */
+        gchar *message = g_strdup_printf("Command rejected: HTTP %u",
+                                         status_code);
+        panel_ui_set_status(application->ui, message,
+                            PANEL_UI_STATUS_WARNING);
         g_free(message);
     } else {
-        panel_ui_set_status(application->ui, "Connected", FALSE);
+        /* The poll cycle owns the icon: it is the only place that knows
+         * whether every configured entity still answers. */
         poll_states(application);
     }
 }
@@ -196,8 +233,8 @@ static void call_service(PanelApplication *application, const gchar *domain,
     if (!home_assistant_client_call_service(
             application->client, domain, service, json, service_finished,
             application)) {
-        panel_ui_set_status(application->ui,
-                            "Invalid Home Assistant URL", TRUE);
+        panel_ui_set_status(application->ui, "Invalid Home Assistant URL",
+                            PANEL_UI_STATUS_OFFLINE);
     }
 }
 
@@ -537,8 +574,8 @@ static void finish_poll_request(PanelApplication *application)
 {
     g_assert(application->poll_pending > 0);
     application->poll_pending--;
-    if (application->poll_pending == 0 && !application->poll_failed)
-        panel_ui_set_status(application->ui, "Connected", FALSE);
+    if (application->poll_pending == 0)
+        apply_poll_status(application);
 }
 
 static gboolean parse_state(GBytes *body, JsonParser **parser,
@@ -610,9 +647,9 @@ static void playlist_state_parsed(GObject *source_object, GAsyncResult *result,
         update_state(application, request->kind, request->index, parser);
         g_object_unref(parser);
     } else {
-        panel_ui_set_status(application->ui,
-                            "Invalid Home Assistant response", TRUE);
-        application->poll_failed = TRUE;
+        note_poll_status(application, PANEL_UI_STATUS_WARNING,
+                         g_strdup_printf("Unreadable state for %s",
+                                         request->entity));
         g_clear_error(&error);
     }
     finish_poll_request(application);
@@ -625,16 +662,26 @@ static void state_finished(guint status_code, GBytes *body,
     PollRequest *request = user_data;
     PanelApplication *application = request->application;
 
+    /* Only a transport failure means the panel could not reach Home
+     * Assistant. Every HTTP reply, including the 404 sent for an entity ID
+     * that does not exist, proves the connection works and must be reported
+     * as a configuration warning instead. */
     if (error != NULL) {
-        gchar *message = g_strdup_printf("Offline: %s", error->message);
-        panel_ui_set_status(application->ui, message, TRUE);
-        g_free(message);
-        application->poll_failed = TRUE;
+        note_poll_status(application, PANEL_UI_STATUS_OFFLINE,
+                         g_strdup_printf("Offline: %s", error->message));
+    } else if (status_code == 404) {
+        note_poll_status(application, PANEL_UI_STATUS_WARNING,
+                         g_strdup_printf("Unknown entity %s: check config.ini",
+                                         request->entity));
+    } else if (status_code == 401 || status_code == 403) {
+        note_poll_status(application, PANEL_UI_STATUS_WARNING,
+                         g_strdup_printf("Home Assistant refused the token "
+                                         "(HTTP %u): check config.ini",
+                                         status_code));
     } else if (status_code != 200 || body == NULL) {
-        gchar *message = g_strdup_printf("Home Assistant HTTP %u", status_code);
-        panel_ui_set_status(application->ui, message, TRUE);
-        g_free(message);
-        application->poll_failed = TRUE;
+        note_poll_status(application, PANEL_UI_STATUS_WARNING,
+                         g_strdup_printf("%s: Home Assistant HTTP %u",
+                                         request->entity, status_code));
     } else {
         GError *parse_error = NULL;
         JsonParser *parser = NULL;
@@ -655,9 +702,9 @@ static void state_finished(guint status_code, GBytes *body,
         if (parse_state(body, &parser, &parse_error)) {
             update_state(application, request->kind, request->index, parser);
         } else {
-            panel_ui_set_status(application->ui,
-                                "Invalid Home Assistant response", TRUE);
-            application->poll_failed = TRUE;
+            note_poll_status(application, PANEL_UI_STATUS_WARNING,
+                             g_strdup_printf("Unreadable state for %s",
+                                             request->entity));
         }
         g_clear_error(&parse_error);
         g_clear_object(&parser);
@@ -674,13 +721,15 @@ static void start_state_request(PanelApplication *application,
     request->application = application;
     request->kind = kind;
     request->index = index;
+    request->entity = entity;
 
     application->poll_pending++;
     if (!home_assistant_client_get_state(
             application->client, entity, state_finished, request,
             poll_request_free)) {
         application->poll_pending--;
-        application->poll_failed = TRUE;
+        note_poll_status(application, PANEL_UI_STATUS_OFFLINE,
+                         g_strdup("Invalid Home Assistant URL"));
         poll_request_free(request);
     }
 }
@@ -691,7 +740,8 @@ static gboolean poll_states(gpointer user_data)
     if (application->poll_pending != 0)
         return G_SOURCE_CONTINUE;
 
-    application->poll_failed = FALSE;
+    application->poll_status = PANEL_UI_STATUS_CONNECTED;
+    g_clear_pointer(&application->poll_message, g_free);
     start_state_request(application, application->config->player_entity,
                         POLL_REQUEST_PLAYER, 0);
     start_state_request(application, application->config->queue_entity,
@@ -712,10 +762,10 @@ static gboolean poll_states(gpointer user_data)
         }
     }
 
-    if (application->poll_pending == 0) {
-        panel_ui_set_status(application->ui,
-                            "Invalid Home Assistant URL", TRUE);
-    }
+    /* Every request was rejected before it started, so no callback will run
+     * to report the outcome. */
+    if (application->poll_pending == 0)
+        apply_poll_status(application);
     return G_SOURCE_CONTINUE;
 }
 
@@ -798,6 +848,7 @@ static void panel_application_free(PanelApplication *application)
     g_free(application->album_art_url);
     g_free(application->repeat_state);
     g_free(application->queue_data);
+    g_free(application->poll_message);
     g_free(application);
 }
 
