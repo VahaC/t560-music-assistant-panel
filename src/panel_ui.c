@@ -1,5 +1,9 @@
 #include "panel_ui.h"
 
+/* The ADJUST button sits in the top-right corner of a room card and the
+ * header row reserves its height, so both must use the same value. */
+#define PANEL_ROOM_ADJUST_HEIGHT 44
+
 struct _PanelUi {
     const AppConfig *config;
     PanelUiEventHandler event_handler;
@@ -963,16 +967,13 @@ static GtkWidget *room_page(PanelUi *ui)
         GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
         add_css_class(box, "room-card-content");
 
-        GtkWidget *meta = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         GtkWidget *type = new_label(control_types[i], "room-type");
         gtk_label_set_ellipsize(GTK_LABEL(type), PANGO_ELLIPSIZE_NONE);
-        gchar *number_text = g_strdup_printf("%02u", i + 1);
-        GtkWidget *number = new_label(number_text, "room-number");
-        g_free(number_text);
         gtk_widget_set_halign(type, GTK_ALIGN_START);
-        gtk_widget_set_halign(number, GTK_ALIGN_END);
-        gtk_box_pack_start(GTK_BOX(meta), type, TRUE, TRUE, 0);
-        gtk_box_pack_end(GTK_BOX(meta), number, FALSE, FALSE, 0);
+        gtk_widget_set_valign(type, GTK_ALIGN_CENTER);
+        gtk_widget_set_size_request(header, -1, PANEL_ROOM_ADJUST_HEIGHT);
+        gtk_box_pack_start(GTK_BOX(header), type, TRUE, TRUE, 0);
 
         GtkWidget *icon_shell = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         GtkWidget *icon = new_room_icon(ui, i, icon_resources[i]);
@@ -993,7 +994,7 @@ static GtkWidget *room_page(PanelUi *ui)
             ui->config->room_entities[i] != NULL ? "--" : "NOT CONFIGURED",
             "room-state");
         gtk_widget_set_halign(ui->room_states[i], GTK_ALIGN_CENTER);
-        gtk_box_pack_start(GTK_BOX(box), meta, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(box), header, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box), icon_shell, TRUE, TRUE, 0);
         gtk_box_pack_start(GTK_BOX(box), name, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box), ui->room_states[i], FALSE, FALSE, 0);
@@ -1006,12 +1007,14 @@ static GtkWidget *room_page(PanelUi *ui)
 
         if (ui->config->room_brightness[i] ||
             ui->config->room_color_temperature[i]) {
-            GtkWidget *adjust = new_button(
-                "ADJUST", "room-adjust-button", 92, 44);
+            GtkWidget *adjust = new_button("ADJUST", "room-adjust-button",
+                                           92, PANEL_ROOM_ADJUST_HEIGHT);
             gtk_widget_set_halign(adjust, GTK_ALIGN_END);
-            gtk_widget_set_valign(adjust, GTK_ALIGN_END);
-            gtk_widget_set_margin_end(adjust, 14);
-            gtk_widget_set_margin_bottom(adjust, 12);
+            gtk_widget_set_valign(adjust, GTK_ALIGN_START);
+            /* Matches the .room-card-content padding, so the button lands on
+             * the header row instead of floating over the icon. */
+            gtk_widget_set_margin_end(adjust, 20);
+            gtk_widget_set_margin_top(adjust, 14);
             gtk_widget_set_sensitive(
                 adjust, ui->config->room_entities[i] != NULL);
             g_object_set_data(G_OBJECT(adjust), "room-index",
@@ -1360,7 +1363,6 @@ void panel_ui_install_styles(void)
         ".room-card:disabled{background:transparent;background-image:none;border:0;box-shadow:none;color:#52657c}"
         ".room-card-content{padding:14px 20px 13px 20px}"
         ".room-type{font-size:12px;font-weight:700;letter-spacing:1px;color:#7189a7}"
-        ".room-number{font-size:13px;font-weight:700;color:#526a86;background:#0b1420;border:1px solid #263a53;border-radius:14px;padding:5px 9px}"
         ".room-icon-shell{background-image:linear-gradient(to bottom,#203550,#0d1828);border:1px solid #3c5574;border-bottom:4px solid #07101a;border-radius:44px;box-shadow:0 7px 15px rgba(0,0,0,.4);transition:180ms ease-out}"
         ".room-icon{color:#9ab2cf;-gtk-icon-shadow:0 2px 3px rgba(0,0,0,.35)}"
         ".room-card.active .room-icon-shell{background-image:linear-gradient(to bottom,#65eee4,#2bc3ce);border-color:#8ff8f1;border-bottom-color:#147680;box-shadow:0 9px 22px rgba(45,208,205,.32)}"
